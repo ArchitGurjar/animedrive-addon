@@ -1,5 +1,6 @@
+// src/types.ts
 export interface AnimeItem {
-  id: string;          // e.g. "naruto"
+  id: string;
   name: string;
   poster?: string;
   type: "movie" | "series";
