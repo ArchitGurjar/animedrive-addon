@@ -1,6 +1,6 @@
 // src/index.ts
 import express, { Request, Response } from 'express';
-import { manifest } from './manifest';
+import { manifest } from './manifest'; // Ensure manifest.ts exports it correctly
 import { getRecentAnime, getAnimeDetails, getEpisodeStream } from './scraper';
 import { AnimeItem } from './types';
 
@@ -11,28 +11,24 @@ app.get('/manifest.json', (req: Request, res: Response) => {
   res.json(manifest);
 });
 
-// Catalog endpoint
+// Catalog endpoint – now using Gogoanime's "recent" catalog
 app.get('/catalog/:type/:id.json', async (req: Request, res: Response) => {
   const { type, id } = req.params;
   try {
     let items: AnimeItem[] = [];
-    // Match the catalog IDs defined in manifest.ts
+    // Match the catalog ID you defined in manifest.ts (e.g., "gogoanime_recent")
     if (id === 'gogoanime_recent' && type === 'series') {
       items = await getRecentAnime();
     } else if (id === 'gogoanime_movies' && type === 'movie') {
       // You can implement getRecentMovies() later if needed
       items = [];
-    } else {
-      // If no matching catalog, return empty (or error)
-      return res.status(404).json({ error: 'Catalog not found' });
     }
-    // Convert to Stremio catalog format
     const metas = items.map(item => ({
       id: item.id,
       type: item.type,
       name: item.name,
       poster: item.poster,
-      year: item.year,
+      // year is optional; you can add it if you extract it
     }));
     res.json({ metas });
   } catch (error) {
@@ -41,7 +37,7 @@ app.get('/catalog/:type/:id.json', async (req: Request, res: Response) => {
   }
 });
 
-// Meta endpoint
+// Meta endpoint – unchanged, uses getAnimeDetails
 app.get('/meta/:type/:id.json', async (req: Request, res: Response) => {
   const { type, id } = req.params;
   try {
@@ -49,7 +45,6 @@ app.get('/meta/:type/:id.json', async (req: Request, res: Response) => {
     if (!details) {
       return res.status(404).json({ error: 'Anime not found' });
     }
-    // Convert to Stremio meta format
     const meta = {
       id: details.id,
       type: details.type,
@@ -71,7 +66,7 @@ app.get('/meta/:type/:id.json', async (req: Request, res: Response) => {
   }
 });
 
-// Stream endpoint
+// Stream endpoint – uses getEpisodeStream
 app.get('/stream/:type/:id.json', async (req: Request, res: Response) => {
   const { type, id } = req.params;
   try {
@@ -79,7 +74,6 @@ app.get('/stream/:type/:id.json', async (req: Request, res: Response) => {
     if (!streamUrl) {
       return res.status(404).json({ error: 'Stream not found' });
     }
-    // Stremio expects an array of streams
     res.json({
       streams: [
         {
@@ -94,13 +88,12 @@ app.get('/stream/:type/:id.json', async (req: Request, res: Response) => {
   }
 });
 
-// Health check for Render uptime
+// Health check for Render
 app.get('/health', (req: Request, res: Response) => {
   res.send('OK');
 });
 
-// Start server
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => {
-  console.log(`Anime addon running on port ${PORT}`);
+  console.log(`AnimeDrive addon running on port ${PORT}`);
 });
