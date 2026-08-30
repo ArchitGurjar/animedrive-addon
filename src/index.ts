@@ -1,6 +1,7 @@
+// src/index.ts
 import express, { Request, Response } from 'express';
 import { manifest } from './manifest';
-import { getPopularAnime, getAnimeDetails, getEpisodeStream } from './scraper';
+import { getRecentAnime, getAnimeDetails, getEpisodeStream } from './scraper';
 import { AnimeItem } from './types';
 
 const app = express();
@@ -15,11 +16,15 @@ app.get('/catalog/:type/:id.json', async (req: Request, res: Response) => {
   const { type, id } = req.params;
   try {
     let items: AnimeItem[] = [];
-    if (id === 'animedrive_popular' && type === 'series') {
-      items = await getPopularAnime();
-    } else if (id === 'animedrive_movies' && type === 'movie') {
-      // implement getPopularMovies() if needed
+    // Match the catalog IDs defined in manifest.ts
+    if (id === 'gogoanime_recent' && type === 'series') {
+      items = await getRecentAnime();
+    } else if (id === 'gogoanime_movies' && type === 'movie') {
+      // You can implement getRecentMovies() later if needed
       items = [];
+    } else {
+      // If no matching catalog, return empty (or error)
+      return res.status(404).json({ error: 'Catalog not found' });
     }
     // Convert to Stremio catalog format
     const metas = items.map(item => ({
@@ -79,7 +84,7 @@ app.get('/stream/:type/:id.json', async (req: Request, res: Response) => {
       streams: [
         {
           url: streamUrl,
-          title: 'AnimeDrive Stream',
+          title: 'Gogoanime Stream',
         },
       ],
     });
@@ -97,5 +102,5 @@ app.get('/health', (req: Request, res: Response) => {
 // Start server
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => {
-  console.log(`AnimeDrive addon running on port ${PORT}`);
+  console.log(`Anime addon running on port ${PORT}`);
 });
