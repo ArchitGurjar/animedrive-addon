@@ -25,7 +25,7 @@ async function fetchHTML(url: string): Promise<string> {
     }
 }
 
-// Get a list of recently updated anime (used for catalog)
+// ----- CATALOG: Get a list of recently updated anime -----
 export async function getRecentAnime(): Promise<AnimeItem[]> {
     const html = await fetchHTML(`${BASE_URL}/home`);
     const $ = cheerio.load(html);
@@ -44,7 +44,7 @@ export async function getRecentAnime(): Promise<AnimeItem[]> {
             items.push({
                 id,
                 name: title,
-                poster: poster ? poster : undefined,
+                poster: poster || undefined,
                 type: 'series',
             });
         }
@@ -53,7 +53,7 @@ export async function getRecentAnime(): Promise<AnimeItem[]> {
     return items;
 }
 
-// Get anime details, including the full episode list
+// ----- META: Get anime details, including the full episode list -----
 export async function getAnimeDetails(animeId: string): Promise<MetaDetails | null> {
     const html = await fetchHTML(`${BASE_URL}/category/${animeId}`);
     const $ = cheerio.load(html);
@@ -66,7 +66,7 @@ export async function getAnimeDetails(animeId: string): Promise<MetaDetails | nu
 
     const poster = $('.anime_info_body_bg img').attr('src');
     const description = $('.anime_info_body_bg .description').text().trim();
-    
+
     // Extract genres
     const genre: string[] = [];
     $('.anime_info_body_bg .genre a').each((_, element) => {
@@ -93,11 +93,10 @@ export async function getAnimeDetails(animeId: string): Promise<MetaDetails | nu
         }
     });
 
-    // Return the data in the expected format
     return {
         id: animeId,
         name: title,
-        poster: poster ? poster : undefined,
+        poster: poster || undefined,
         type: 'series',
         description,
         genre,
@@ -105,17 +104,14 @@ export async function getAnimeDetails(animeId: string): Promise<MetaDetails | nu
     };
 }
 
-// Get the video stream URL for a specific episode
+// ----- STREAM: Get the video URL for a specific episode -----
 export async function getEpisodeStream(episodeId: string): Promise<string | null> {
     const html = await fetchHTML(`${BASE_URL}/watch/${episodeId}`);
     const $ = cheerio.load(html);
 
-    // Gogoanime often loads the video via JavaScript.
-    // The most reliable way is to find the iframe that contains the video player.
+    // Gogoanime often loads the video via an iframe.
     const iframeSrc = $('iframe').attr('src');
     if (iframeSrc) {
-        // If the iframe is from a known player, we might need to follow it.
-        // For simplicity, we return the iframe URL.
         return iframeSrc;
     }
 
@@ -125,9 +121,6 @@ export async function getEpisodeStream(episodeId: string): Promise<string | null
         return videoSrc;
     }
 
-    // If you need to parse the JavaScript to find the stream URL,
-    // you would need a more complex setup (e.g., using puppeteer).
-    // For a robust solution, consider using a library that handles this.
     console.warn(`Could not find stream for episode: ${episodeId}`);
     return null;
 }
