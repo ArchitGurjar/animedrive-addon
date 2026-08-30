@@ -6,21 +6,19 @@ import { AnimeItem } from './types';
 
 const app = express();
 
-// ─── CORS MIDDLEWARE ──────────────────────────────────────────────
-// This allows Stremio and UltraStream to access the addon
+// ─── CORS ──────────────────────────────────────────────────────────
+
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
-  if (req.method === 'OPTIONS') {
-    res.sendStatus(200);
-  } else {
-    next();
-  }
+  if (req.method === 'OPTIONS') res.sendStatus(200);
+  else next();
 });
 
 // ─── ROOT – LANDING PAGE ─────────────────────────────────────────
 
 app.get('/', (req: Request, res: Response) => {
+  const manifestUrl = `https://${req.get('host')}/manifest.json`;
   res.send(`
 <!DOCTYPE html>
 <html lang="en">
@@ -28,12 +26,9 @@ app.get('/', (req: Request, res: Response) => {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AnimeDrive Addon</title>
+  <link rel="manifest" href="${manifestUrl}">
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+    * { margin:0; padding:0; box-sizing:border-box; }
     body {
       font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
       background: #0b0e14;
@@ -45,17 +40,16 @@ app.get('/', (req: Request, res: Response) => {
       padding: 20px;
     }
     .card {
-      max-width: 600px;
+      max-width: 680px;
       width: 100%;
       background: #1e293b;
       border-radius: 24px;
       padding: 40px 30px;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8);
+      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8);
       text-align: center;
     }
     .logo {
-      width: 96px;
-      height: 96px;
+      width: 96px; height: 96px;
       border-radius: 20px;
       background: #2d3b52;
       padding: 12px;
@@ -64,97 +58,112 @@ app.get('/', (req: Request, res: Response) => {
       align-items: center;
       justify-content: center;
     }
-    .logo img {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-    }
-    h1 {
-      font-size: 28px;
-      font-weight: 700;
-      margin-bottom: 6px;
-      color: #f1f5f9;
-    }
+    .logo img { width:100%; height:100%; object-fit:contain; }
+    h1 { font-size:28px; font-weight:700; margin-bottom:6px; color:#f1f5f9; }
     .badge {
-      display: inline-block;
-      background: #3b82f6;
-      color: #fff;
-      font-size: 14px;
-      font-weight: 600;
-      padding: 4px 14px;
-      border-radius: 20px;
-      margin-bottom: 16px;
-      letter-spacing: 0.3px;
+      display:inline-block;
+      background:#3b82f6;
+      color:#fff;
+      font-size:14px;
+      font-weight:600;
+      padding:4px 14px;
+      border-radius:20px;
+      margin-bottom:16px;
     }
     .description {
-      font-size: 16px;
-      color: #94a3b8;
-      margin-bottom: 24px;
-      line-height: 1.6;
+      font-size:16px;
+      color:#94a3b8;
+      margin-bottom:24px;
+      line-height:1.6;
     }
-    .install-btn {
+    .install-section {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+      margin-bottom: 24px;
+    }
+    .btn {
       display: inline-block;
       background: #3b82f6;
       color: #fff;
-      font-size: 18px;
+      font-size: 16px;
       font-weight: 600;
-      padding: 14px 36px;
+      padding: 12px 28px;
       border-radius: 40px;
       text-decoration: none;
       transition: background 0.2s, transform 0.1s;
-      margin-bottom: 28px;
       border: none;
       cursor: pointer;
     }
-    .install-btn:hover {
-      background: #2563eb;
-      transform: scale(1.02);
+    .btn:hover { background: #2563eb; transform: scale(1.02); }
+    .btn:active { transform: scale(0.97); }
+    .btn-secondary {
+      background: transparent;
+      border: 1.5px solid #475569;
+      color: #e2e8f0;
     }
-    .install-btn:active {
-      transform: scale(0.97);
-    }
+    .btn-secondary:hover { background: #1e293b; border-color: #64748b; }
     .divider {
       border: none;
       border-top: 1px solid #334155;
       margin: 20px 0;
     }
-    .info-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-      text-align: left;
-      margin-bottom: 20px;
-    }
-    .info-item {
+    .manual-install {
       background: #0f172a;
-      padding: 12px 16px;
+      border-radius: 16px;
+      padding: 20px;
+      text-align: left;
+      margin-bottom: 16px;
+    }
+    .manual-install label {
+      display: block;
+      font-size: 14px;
+      font-weight: 600;
+      color: #94a3b8;
+      margin-bottom: 8px;
+    }
+    .url-box {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      background: #0b0e14;
       border-radius: 12px;
+      padding: 4px 4px 4px 16px;
     }
-    .info-item .label {
-      font-size: 12px;
-      color: #64748b;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    .info-item .value {
-      font-size: 15px;
-      font-weight: 500;
+    .url-box input {
+      flex: 1;
+      background: transparent;
+      border: none;
       color: #e2e8f0;
-      margin-top: 2px;
+      font-size: 14px;
+      padding: 10px 0;
+      outline: none;
+      width: 100%;
     }
+    .url-box input::selection { background: #3b82f6; }
+    .copy-btn {
+      background: #3b82f6;
+      color: #fff;
+      border: none;
+      padding: 8px 18px;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      transition: background 0.2s;
+      white-space: nowrap;
+    }
+    .copy-btn:hover { background: #2563eb; }
+    .copy-btn.copied { background: #22c55e; }
     .footnote {
       font-size: 14px;
       color: #64748b;
-      margin-top: 16px;
+      margin-top: 12px;
     }
-    .footnote a {
-      color: #60a5fa;
-      text-decoration: none;
-    }
-    .footnote a:hover {
-      text-decoration: underline;
-    }
-    .ultrastream-note {
+    .footnote a { color: #60a5fa; text-decoration:none; }
+    .footnote a:hover { text-decoration:underline; }
+    .ultra-note {
       background: #0f172a;
       border-radius: 12px;
       padding: 16px;
@@ -162,15 +171,16 @@ app.get('/', (req: Request, res: Response) => {
       font-size: 14px;
       color: #94a3b8;
       border-left: 4px solid #3b82f6;
+      text-align: left;
     }
-    .ultrastream-note strong {
-      color: #e2e8f0;
-    }
+    .ultra-note strong { color: #e2e8f0; }
     @media (max-width: 480px) {
       .card { padding: 28px 18px; }
       h1 { font-size: 24px; }
-      .install-btn { font-size: 16px; padding: 12px 28px; }
-      .info-grid { grid-template-columns: 1fr; }
+      .btn { font-size: 14px; padding: 10px 20px; }
+      .url-box { flex-wrap: wrap; }
+      .url-box input { font-size: 12px; }
+      .copy-btn { width: 100%; text-align: center; }
     }
   </style>
 </head>
@@ -187,48 +197,74 @@ app.get('/', (req: Request, res: Response) => {
       Watch &amp; download anime from <strong>animedrive.me</strong> – Hindi, English, Japanese &amp; multi‑audio.
     </p>
 
-    <!-- Install in Stremio -->
-    <a 
-      href="stremio://install?url=https%3A%2F%2Fanimedrive-addon.onrender.com%2Fmanifest.json"
-      class="install-btn"
-    >
-      📦 Install in Stremio
-    </a>
+    <!-- Install Buttons -->
+    <div class="install-section">
+      <a 
+        href="stremio://install?url=${encodeURIComponent(manifestUrl)}"
+        class="btn"
+      >
+        📦 Install in Stremio
+      </a>
+      <a 
+        href="${manifestUrl}"
+        class="btn btn-secondary"
+        target="_blank"
+      >
+        📄 View Manifest
+      </a>
+    </div>
 
     <hr class="divider">
 
-    <div class="info-grid">
-      <div class="info-item">
-        <div class="label">Manifest</div>
-        <div class="value"><a href="/manifest.json" style="color:#60a5fa;">/manifest.json</a></div>
+    <!-- Manual Install for UltraStream / other apps -->
+    <div class="manual-install">
+      <label for="manifestUrl">📱 Install in UltraStream or any Stremio‑compatible app:</label>
+      <div class="url-box">
+        <input type="text" id="manifestUrl" value="${manifestUrl}" readonly>
+        <button class="copy-btn" id="copyBtn" onclick="copyManifest()">📋 Copy</button>
       </div>
-      <div class="info-item">
-        <div class="label">Health</div>
-        <div class="value"><a href="/health" style="color:#60a5fa;">/health</a></div>
-      </div>
-      <div class="info-item">
-        <div class="label">Resources</div>
-        <div class="value">catalog, meta, stream</div>
-      </div>
-      <div class="info-item">
-        <div class="label">Types</div>
-        <div class="value">series, movie</div>
-      </div>
+      <p style="margin-top: 8px; font-size:13px; color:#64748b;">
+        Paste this URL in the <strong>Install Custom Addon</strong> section of your app.
+      </p>
     </div>
 
-    <div class="ultrastream-note">
-      <strong>📱 UltraStream Users</strong><br>
-      Open the app, go to <strong>Addons → Install Custom Addon</strong><br>
-      and paste:<br>
-      <code style="word-break:break-all; background:#1e293b; padding:4px 8px; border-radius:6px; display:inline-block; margin-top:6px;">
-        https://animedrive-addon.onrender.com/manifest.json
-      </code>
+    <div class="ultra-note">
+      <strong>⚡ Quick tip:</strong> If you're on <strong>UltraStream</strong>, go to <strong>Addons → Install Custom Addon</strong> and paste the URL above.
     </div>
 
-    <p class="footnote">
-      🔐 <a href="https://github.com/ArchitGurjar/animedrive-addon" target="_blank">View Source</a>
-    </p>
+    <hr class="divider">
+
+    <div style="display: flex; gap: 16px; justify-content: center; font-size:14px; color:#94a3b8;">
+      <a href="/health" style="color:#60a5fa;">Health</a>
+      <span>•</span>
+      <a href="${manifestUrl}" style="color:#60a5fa;">Manifest</a>
+      <span>•</span>
+      <a href="https://github.com/ArchitGurjar/animedrive-addon" target="_blank" style="color:#60a5fa;">Source</a>
+    </div>
   </div>
+
+  <script>
+    function copyManifest() {
+      const input = document.getElementById('manifestUrl');
+      const btn = document.getElementById('copyBtn');
+      input.select();
+      input.setSelectionRange(0, 99999);
+      try {
+        navigator.clipboard.writeText(input.value);
+        btn.textContent = '✅ Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = '📋 Copy';
+          btn.classList.remove('copied');
+        }, 2500);
+      } catch (e) {
+        // fallback
+        document.execCommand('copy');
+        btn.textContent = '✅ Copied!';
+        setTimeout(() => btn.textContent = '📋 Copy', 2000);
+      }
+    }
+  </script>
 </body>
 </html>
   `);
@@ -250,7 +286,6 @@ app.get('/catalog/:type/:id.json', async (req: Request, res: Response) => {
       const page = parseInt(req.query.page as string) || 1;
       items = await getRecentAnime(page);
     } else if (id === 'animedrive_movies' && type === 'movie') {
-      // Future: implement movie catalog
       items = [];
     }
 
@@ -330,13 +365,13 @@ app.get('/health', (req: Request, res: Response) => {
   res.send('OK');
 });
 
-// ─── 404 CATCH‑ALL ──────────────────────────────────────────────
+// ─── 404 ──────────────────────────────────────────────────────────
 
 app.use((req: Request, res: Response) => {
   res.status(404).json({ error: 'Not found' });
 });
 
-// ─── START SERVER ────────────────────────────────────────────────
+// ─── START ────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => {
