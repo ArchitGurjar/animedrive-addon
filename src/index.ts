@@ -25,244 +25,56 @@ app.get('/', (req: Request, res: Response) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AnimeDrive Addon</title>
-  <link rel="manifest" href="${manifestUrl}">
+  <title>DesiDubAnime Scraper</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    body {
-      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-      background: #0b0e14;
-      color: #e2e8f0;
-      min-height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      padding: 20px;
-    }
-    .card {
-      max-width: 680px;
-      width: 100%;
-      background: #1e293b;
-      border-radius: 24px;
-      padding: 40px 30px;
-      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8);
-      text-align: center;
-    }
-    .logo {
-      width: 96px; height: 96px;
-      border-radius: 20px;
-      background: #2d3b52;
-      padding: 12px;
-      margin: 0 auto 20px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .logo img { width:100%; height:100%; object-fit:contain; }
-    h1 { font-size:28px; font-weight:700; margin-bottom:6px; color:#f1f5f9; }
-    .badge {
-      display:inline-block;
-      background:#3b82f6;
-      color:#fff;
-      font-size:14px;
-      font-weight:600;
-      padding:4px 14px;
-      border-radius:20px;
-      margin-bottom:16px;
-    }
-    .description {
-      font-size:16px;
-      color:#94a3b8;
-      margin-bottom:24px;
-      line-height:1.6;
-    }
-    .install-section {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      justify-content: center;
-      margin-bottom: 24px;
-    }
-    .btn {
-      display: inline-block;
-      background: #3b82f6;
-      color: #fff;
-      font-size: 16px;
-      font-weight: 600;
-      padding: 12px 28px;
-      border-radius: 40px;
-      text-decoration: none;
-      transition: background 0.2s, transform 0.1s;
-      border: none;
-      cursor: pointer;
-    }
-    .btn:hover { background: #2563eb; transform: scale(1.02); }
-    .btn:active { transform: scale(0.97); }
-    .btn-secondary {
-      background: transparent;
-      border: 1.5px solid #475569;
-      color: #e2e8f0;
-    }
-    .btn-secondary:hover { background: #1e293b; border-color: #64748b; }
-    .divider {
-      border: none;
-      border-top: 1px solid #334155;
-      margin: 20px 0;
-    }
-    .manual-install {
-      background: #0f172a;
-      border-radius: 16px;
-      padding: 20px;
-      text-align: left;
-      margin-bottom: 16px;
-    }
-    .manual-install label {
-      display: block;
-      font-size: 14px;
-      font-weight: 600;
-      color: #94a3b8;
-      margin-bottom: 8px;
-    }
-    .url-box {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      background: #0b0e14;
-      border-radius: 12px;
-      padding: 4px 4px 4px 16px;
-    }
-    .url-box input {
-      flex: 1;
-      background: transparent;
-      border: none;
-      color: #e2e8f0;
-      font-size: 14px;
-      padding: 10px 0;
-      outline: none;
-      width: 100%;
-    }
-    .url-box input::selection { background: #3b82f6; }
-    .copy-btn {
-      background: #3b82f6;
-      color: #fff;
-      border: none;
-      padding: 8px 18px;
-      border-radius: 10px;
-      font-weight: 600;
-      font-size: 14px;
-      cursor: pointer;
-      transition: background 0.2s;
-      white-space: nowrap;
-    }
+    body { font-family: system-ui, sans-serif; background: #0b0e14; color: #e2e8f0; min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
+    .card { max-width: 600px; width: 100%; background: #1e293b; border-radius: 24px; padding: 40px 30px; text-align: center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8); }
+    h1 { font-size: 28px; margin-bottom: 8px; color: #f1f5f9; }
+    .badge { display: inline-block; background: #3b82f6; color: #fff; font-size: 14px; padding: 4px 14px; border-radius: 20px; margin-bottom: 16px; }
+    .description { font-size: 16px; color: #94a3b8; margin-bottom: 24px; line-height: 1.6; }
+    .install-section { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-bottom: 20px; }
+    .btn { display: inline-block; background: #3b82f6; color: #fff; font-size: 16px; font-weight: 600; padding: 12px 28px; border-radius: 40px; text-decoration: none; transition: background 0.2s; border: none; cursor: pointer; }
+    .btn:hover { background: #2563eb; }
+    .btn-secondary { background: transparent; border: 1.5px solid #475569; color: #e2e8f0; }
+    .btn-secondary:hover { background: #1e293b; }
+    .url-box { display: flex; gap: 10px; align-items: center; background: #0f172a; border-radius: 12px; padding: 4px 4px 4px 16px; margin-top: 8px; }
+    .url-box input { flex: 1; background: transparent; border: none; color: #e2e8f0; font-size: 14px; padding: 10px 0; outline: none; }
+    .copy-btn { background: #3b82f6; color: #fff; border: none; padding: 8px 18px; border-radius: 10px; font-weight: 600; cursor: pointer; }
     .copy-btn:hover { background: #2563eb; }
     .copy-btn.copied { background: #22c55e; }
-    .footnote {
-      font-size: 14px;
-      color: #64748b;
-      margin-top: 12px;
-    }
-    .footnote a { color: #60a5fa; text-decoration:none; }
-    .footnote a:hover { text-decoration:underline; }
-    .ultra-note {
-      background: #0f172a;
-      border-radius: 12px;
-      padding: 16px;
-      margin-top: 16px;
-      font-size: 14px;
-      color: #94a3b8;
-      border-left: 4px solid #3b82f6;
-      text-align: left;
-    }
-    .ultra-note strong { color: #e2e8f0; }
-    @media (max-width: 480px) {
-      .card { padding: 28px 18px; }
-      h1 { font-size: 24px; }
-      .btn { font-size: 14px; padding: 10px 20px; }
-      .url-box { flex-wrap: wrap; }
-      .url-box input { font-size: 12px; }
-      .copy-btn { width: 100%; text-align: center; }
-    }
+    .footnote { font-size: 14px; color: #64748b; margin-top: 16px; }
+    @media (max-width: 480px) { .card { padding: 28px 18px; } h1 { font-size: 24px; } .url-box { flex-wrap: wrap; } .copy-btn { width: 100%; } }
   </style>
 </head>
 <body>
   <div class="card">
-    <div class="logo">
-      <img src="https://animedrive.me/wp-content/uploads/2026/07/animedrive-logo-fixed.png" alt="AnimeDrive">
-    </div>
-
-    <h1>AnimeDrive Scraper</h1>
+    <h1>DesiDubAnime Scraper</h1>
     <span class="badge">v1.0.0</span>
-
-    <p class="description">
-      Watch &amp; download anime from <strong>animedrive.me</strong> – Hindi, English, Japanese &amp; multi‑audio.
-    </p>
-
-    <!-- Install Buttons -->
+    <p class="description">Watch Indian regional dubbed anime from <strong>desidubanime.me</strong></p>
     <div class="install-section">
-      <a 
-        href="stremio://install?url=${encodeURIComponent(manifestUrl)}"
-        class="btn"
-      >
-        📦 Install in Stremio
-      </a>
-      <a 
-        href="${manifestUrl}"
-        class="btn btn-secondary"
-        target="_blank"
-      >
-        📄 View Manifest
-      </a>
+      <a href="stremio://install?url=${encodeURIComponent(manifestUrl)}" class="btn">📦 Install in Stremio</a>
+      <a href="${manifestUrl}" class="btn btn-secondary" target="_blank">📄 View Manifest</a>
     </div>
-
-    <hr class="divider">
-
-    <!-- Manual Install for UltraStream / other apps -->
-    <div class="manual-install">
-      <label for="manifestUrl">📱 Install in UltraStream or any Stremio‑compatible app:</label>
+    <div style="text-align:left; margin-top:12px;">
+      <label style="font-size:14px; color:#94a3b8;">📱 Install in UltraStream:</label>
       <div class="url-box">
         <input type="text" id="manifestUrl" value="${manifestUrl}" readonly>
         <button class="copy-btn" id="copyBtn" onclick="copyManifest()">📋 Copy</button>
       </div>
-      <p style="margin-top: 8px; font-size:13px; color:#64748b;">
-        Paste this URL in the <strong>Install Custom Addon</strong> section of your app.
-      </p>
     </div>
-
-    <div class="ultra-note">
-      <strong>⚡ Quick tip:</strong> If you're on <strong>UltraStream</strong>, go to <strong>Addons → Install Custom Addon</strong> and paste the URL above.
-    </div>
-
-    <hr class="divider">
-
-    <div style="display: flex; gap: 16px; justify-content: center; font-size:14px; color:#94a3b8;">
-      <a href="/health" style="color:#60a5fa;">Health</a>
-      <span>•</span>
-      <a href="${manifestUrl}" style="color:#60a5fa;">Manifest</a>
-      <span>•</span>
-      <a href="https://github.com/ArchitGurjar/animedrive-addon" target="_blank" style="color:#60a5fa;">Source</a>
-    </div>
+    <p class="footnote"><a href="/health" style="color:#60a5fa;">Health</a> • <a href="${manifestUrl}" style="color:#60a5fa;">Manifest</a> • <a href="https://github.com/your-username/desidubanime-addon" style="color:#60a5fa;">Source</a></p>
   </div>
-
   <script>
     function copyManifest() {
       const input = document.getElementById('manifestUrl');
       const btn = document.getElementById('copyBtn');
       input.select();
-      input.setSelectionRange(0, 99999);
-      try {
-        navigator.clipboard.writeText(input.value);
+      navigator.clipboard.writeText(input.value).then(() => {
         btn.textContent = '✅ Copied!';
         btn.classList.add('copied');
-        setTimeout(() => {
-          btn.textContent = '📋 Copy';
-          btn.classList.remove('copied');
-        }, 2500);
-      } catch (e) {
-        // fallback
-        document.execCommand('copy');
-        btn.textContent = '✅ Copied!';
-        setTimeout(() => btn.textContent = '📋 Copy', 2000);
-      }
+        setTimeout(() => { btn.textContent = '📋 Copy'; btn.classList.remove('copied'); }, 2500);
+      });
     }
   </script>
 </body>
@@ -270,22 +82,20 @@ app.get('/', (req: Request, res: Response) => {
   `);
 });
 
-// ─── MANIFEST ──────────────────────────────────────────────────────
+// ─── API ROUTES ────────────────────────────────────────────────────
 
 app.get('/manifest.json', (req: Request, res: Response) => {
   res.json(manifest);
 });
 
-// ─── CATALOG ──────────────────────────────────────────────────────
-
 app.get('/catalog/:type/:id.json', async (req: Request, res: Response) => {
   const { type, id } = req.params;
   try {
     let items: AnimeItem[] = [];
-    if (id === 'animedrive_popular' && type === 'series') {
+    if (id === 'desidubanime_popular' && type === 'series') {
       const page = parseInt(req.query.page as string) || 1;
       items = await getRecentAnime(page);
-    } else if (id === 'animedrive_movies' && type === 'movie') {
+    } else if (id === 'desidubanime_movies' && type === 'movie') {
       items = [];
     }
 
@@ -302,8 +112,6 @@ app.get('/catalog/:type/:id.json', async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to fetch catalog' });
   }
 });
-
-// ─── META ─────────────────────────────────────────────────────────
 
 app.get('/meta/:type/:id.json', async (req: Request, res: Response) => {
   const { type, id } = req.params;
@@ -335,8 +143,6 @@ app.get('/meta/:type/:id.json', async (req: Request, res: Response) => {
   }
 });
 
-// ─── STREAM ───────────────────────────────────────────────────────
-
 app.get('/stream/:type/:id.json', async (req: Request, res: Response) => {
   const { type, id } = req.params;
   try {
@@ -349,7 +155,7 @@ app.get('/stream/:type/:id.json', async (req: Request, res: Response) => {
       streams: [
         {
           url: streamUrl,
-          title: 'AnimeDrive Stream',
+          title: 'DesiDubAnime Stream',
         },
       ],
     });
@@ -359,21 +165,15 @@ app.get('/stream/:type/:id.json', async (req: Request, res: Response) => {
   }
 });
 
-// ─── HEALTH ───────────────────────────────────────────────────────
-
 app.get('/health', (req: Request, res: Response) => {
   res.send('OK');
 });
-
-// ─── 404 ──────────────────────────────────────────────────────────
 
 app.use((req: Request, res: Response) => {
   res.status(404).json({ error: 'Not found' });
 });
 
-// ─── START ────────────────────────────────────────────────────────
-
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => {
-  console.log(`AnimeDrive addon running on port ${PORT}`);
+  console.log(`DesiDubAnime addon running on port ${PORT}`);
 });
