@@ -129,7 +129,7 @@ export async function getAnimeDetails(animeId: string): Promise<MetaDetails | nu
   const html = await fetchHTML(url);
   const $ = cheerio.load(html);
 
-  // Title
+  // ── Title ──
   let title = $('.anime-data h4 a span:first-child, .anime-data h4 a').first().text().trim();
   if (!title) title = $('h1.entry-title, .anime-title, .post-title').first().text().trim();
   if (!title) {
@@ -137,23 +137,23 @@ export async function getAnimeDetails(animeId: string): Promise<MetaDetails | nu
     return null;
   }
 
-  // Poster
-  const poster = $('.anime-featured img, .poster img, .anime-poster img').first().attr('src');
+  // ── Poster ──
+  const poster = $('.anime-featured img, .poster img, .anime-poster img, .featured-image img').first().attr('src');
 
-  // Description
+  // ── Description ──
   const description = $('.anime-synopsis .prose p, .anime-description, .entry-content p').first().text().trim();
 
-  // Genres
+  // ── Genres ──
   const genre: string[] = [];
   $('.genres a, .genre a, .anime-genres a, .category a, .tags a').each((_, el) => {
     const t = $(el).text().trim();
     if (t) genre.push(t);
   });
 
-  // Episodes
+  // ── Episodes ──
   const episodes: Episode[] = [];
 
-  // Primary selector
+  // Primary: episode list from the anime page
   $('.episode-list-display-box a.episode-list-item').each((_, el) => {
     const href = $(el).attr('href');
     const epNum = $(el).find('.episode-list-item-number').text().trim();
@@ -170,7 +170,7 @@ export async function getAnimeDetails(animeId: string): Promise<MetaDetails | nu
     }
   });
 
-  // Fallback: any link to /watch/
+  // Fallback 1: any link to /watch/
   if (episodes.length === 0) {
     $('a[href*="/watch/"]').each((_, el) => {
       const href = $(el).attr('href');
@@ -190,7 +190,28 @@ export async function getAnimeDetails(animeId: string): Promise<MetaDetails | nu
     });
   }
 
+  // Fallback 2: look for any link containing "/episode/"
+  if (episodes.length === 0) {
+    $('a[href*="/episode/"]').each((_, el) => {
+      const href = $(el).attr('href');
+      if (!href) return;
+      const text = $(el).text().trim();
+      const match = text.match(/\d+/) || href.match(/episode-(\d+)/);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        const id = href.split('/').filter(Boolean).pop() || `${animeId}-ep${num}`;
+        episodes.push({
+          season: 1,
+          episode: num,
+          title: text || `Episode ${num}`,
+          id: id,
+        });
+      }
+    });
+  }
+
   console.log(`[Meta] Found ${episodes.length} episodes for ${animeId}`);
+
   return {
     id: animeId,
     name: title,
