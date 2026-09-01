@@ -1,27 +1,43 @@
 // src/scraper.ts
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import cloudscraper from 'cloudscraper';   // <-- नया import
 import { AnimeItem, MetaDetails, Episode } from './types';
 
 const BASE_URL = 'https://www.desidubanime.me';
 const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY || '';
 
+// ─── UPDATED fetchHTML with cloudscraper ────────────────────────
+
 async function fetchHTML(url: string): Promise<string> {
   try {
     let finalUrl = url;
     if (SCRAPER_API_KEY && SCRAPER_API_KEY !== '') {
+      // अगर ScraperAPI key है तो उसका use करें (optional)
       finalUrl = `http://api.scraperapi.com?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(url)}`;
     }
-    const response = await axios.get(finalUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Referer': BASE_URL,
-      },
-      timeout: 20000,
+
+    // Cloudflare bypass के लिए cloudscraper का use करें
+    const response = await new Promise<string>((resolve, reject) => {
+      cloudscraper({
+        uri: finalUrl,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+          'Referer': BASE_URL,
+        },
+        timeout: 20000,
+      }, (error, response, body) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve(body);
+        }
+      });
     });
-    return response.data;
+
+    return response;
   } catch (error) {
     console.error(`Error fetching ${url}:`, error);
     throw new Error(`Failed to fetch: ${url}`);
@@ -57,24 +73,14 @@ export async function getAllAnime(): Promise<AnimeItem[]> {
     const infoBtn = $(article).find('button[onclick*="window.location.href="]').first();
     if (infoBtn.length) {
       const onclick = infoBtn.attr('onclick') || '';
-      // Extract URL inside the quotes: window.location.href='https://.../anime/xxxx/'
       const match = onclick.match(/window\.location\.href\s*=\s*['"]([^'"]+)['"]/);
       if (match && match[1]) {
         const urlParts = match[1].split('/');
-        slug = urlParts[urlParts.length - 2] || ''; // get last non‑empty part before trailing slash
+        slug = urlParts[urlParts.length - 2] || '';
       }
     }
 
-    // Fallback: try to extract slug from the watch link (title's href)
-    if (!slug) {
-      const watchLink = titleEl.attr('href') || '';
-      // Remove episode suffix: e.g., "grand-blue-season-3-episode-1" → "grand-blue-season-3"
-      // We'll strip "-episode-1" or similar, but it's not perfect.
-      // Better to skip if no slug found.
-      // For now, we skip.
-      return;
-    }
-
+    if (!slug) return;
     if (seen.has(slug)) return;
     seen.add(slug);
 
@@ -86,7 +92,7 @@ export async function getAllAnime(): Promise<AnimeItem[]> {
     });
   });
 
-  // If we didn't find any using the article method, fallback to generic links
+  // Fallback: if no cards found, try generic links
   if (items.length === 0) {
     $('a[href*="/anime/"]').each((_, el) => {
       const link = $(el).attr('href');
@@ -114,10 +120,9 @@ export async function getAllAnime(): Promise<AnimeItem[]> {
   return items;
 }
 
-// ─── KEEP getRecentAnime() for backward compatibility ──────────
+// ─── BACKWARD COMPATIBILITY ──────────────────────────────────────
 
 export async function getRecentAnime(page: number = 1): Promise<AnimeItem[]> {
-  // You can choose to return the full list or a subset (e.g., first 20)
   return getAllAnime();
 }
 
@@ -129,7 +134,7 @@ export async function getAnimeDetails(animeId: string): Promise<MetaDetails | nu
   const html = await fetchHTML(url);
   const $ = cheerio.load(html);
 
-  // ── Title ──
+  // Title
   let title = $('.anime-data h4 a span:first-child, .anime-data h4 a').first().text().trim();
   if (!title) title = $('h1.entry-title, .anime-title, .post-title').first().text().trim();
   if (!title) {
@@ -137,20 +142,20 @@ export async function getAnimeDetails(animeId: string): Promise<MetaDetails | nu
     return null;
   }
 
-  // ── Poster ──
-  const poster = $('.anime-featured img, .poster img, .anime-poster img, .featured-image img').first().attr('src');
+  // Poster
+  const poster = $('.anime-featured img, .poster img, .anime-poster img').first().attr('src');
 
-  // ── Description ──
+  // Description
   const description = $('.anime-synopsis .prose p, .anime-description, .entry-content p').first().text().trim();
 
-  // ── Genres ──
+  // Genres
   const genre: string[] = [];
   $('.genres a, .genre a, .anime-genres a, .category a, .tags a').each((_, el) => {
     const t = $(el).text().trim();
     if (t) genre.push(t);
   });
 
-  // ── Episodes ──
+  // Episodes
   const episodes: Episode[] = [];
 
   // Primary: episode list from the anime page
