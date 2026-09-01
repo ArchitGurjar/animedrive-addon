@@ -9,26 +9,24 @@ const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY || '';
 
 // ─── UPDATED fetchHTML with cloudscraper ────────────────────────
 
+import axios from 'axios';
+
 async function fetchHTML(url: string): Promise<string> {
   try {
     let finalUrl = url;
     if (SCRAPER_API_KEY && SCRAPER_API_KEY !== '') {
-      finalUrl = `http://api.scraperapi.com?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(url)}`;
+      // Use HTTPS and enable JavaScript rendering
+      finalUrl = `https://api.scraperapi.com?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(url)}&render=true`;
     }
 
-    // cloudscraper returns a Promise - no callback needed!
-    const response = await cloudscraper({
-      uri: finalUrl,
+    const response = await axios.get(finalUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Referer': BASE_URL,
       },
-      timeout: 20000,
+      timeout: 30000,
     });
 
-    return response;
+    return response.data;
   } catch (error) {
     console.error(`Error fetching ${url}:`, error);
     throw new Error(`Failed to fetch: ${url}`);
