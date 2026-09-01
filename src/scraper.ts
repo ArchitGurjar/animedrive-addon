@@ -1,7 +1,7 @@
 // src/scraper.ts
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import cloudscraper from 'cloudscraper';   // <-- नया import
+import cloudscraper from 'cloudscraper';
 import { AnimeItem, MetaDetails, Episode } from './types';
 
 const BASE_URL = 'https://www.desidubanime.me';
@@ -13,28 +13,19 @@ async function fetchHTML(url: string): Promise<string> {
   try {
     let finalUrl = url;
     if (SCRAPER_API_KEY && SCRAPER_API_KEY !== '') {
-      // अगर ScraperAPI key है तो उसका use करें (optional)
       finalUrl = `http://api.scraperapi.com?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(url)}`;
     }
 
-    // Cloudflare bypass के लिए cloudscraper का use करें
-    const response = await new Promise<string>((resolve, reject) => {
-      cloudscraper({
-        uri: finalUrl,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.5',
-          'Referer': BASE_URL,
-        },
-        timeout: 20000,
-      }, (error, response, body) => {
-        if (error) {
-          reject(error);
-        } else {
-          resolve(body);
-        }
-      });
+    // cloudscraper returns a Promise - no callback needed!
+    const response = await cloudscraper({
+      uri: finalUrl,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Referer': BASE_URL,
+      },
+      timeout: 20000,
     });
 
     return response;
