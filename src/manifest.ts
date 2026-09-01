@@ -2,17 +2,16 @@
 import { Manifest } from 'stremio-addon-sdk';
 
 export const manifest: Manifest = {
-  id: 'org.you.animedrive',
+  id: 'org.you.desidubanime',
   version: '1.0.0',
-  name: 'AnimeDrive Scraper',
-  description: 'Watch anime from animedrive.me',
+  name: 'DesiDubAnime Scraper',
+  description: 'Watch Indian regional dubbed anime from desidubanime.me',
   resources: ['catalog', 'meta', 'stream'],
   types: ['series', 'movie'],
   catalogs: [
-    { type: 'series', id: 'animedrive_popular' },
-    // Add more catalogs if needed (e.g., movies)
+    { type: 'series', id: 'desidubanime_popular' },
+    { type: 'movie', id: 'desidubanime_movies' },
   ],
-  // Optional – replace with actual images if available
-  background: 'https://animedrive.me/wp-content/uploads/2026/07/animedrive-logo-fixed.png',
-  logo: 'https://animedrive.me/wp-content/uploads/2026/07/animedrive-logo-fixed.png',
+  background: 'https://www.desidubanime.me/static/bg.jpg',
+  logo: 'https://www.desidubanime.me/static/logo.png',
 };
