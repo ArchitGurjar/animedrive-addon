@@ -150,15 +150,7 @@ app.get('/stream/:type/:id.json', async (req: Request, res: Response) => {
     if (!streamUrl) {
       return res.status(404).json({ error: 'Stream not found' });
     }
-
-    res.json({
-      streams: [
-        {
-          url: streamUrl,
-          title: 'DesiDubAnime Stream',
-        },
-      ],
-    });
+    res.json({ streams: [{ url: streamUrl, title: 'DesiDubAnime Stream' }] });
   } catch (error) {
     console.error('Stream error:', error);
     res.status(500).json({ error: 'Failed to fetch stream' });
