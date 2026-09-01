@@ -1,21 +1,19 @@
 // src/scraper.ts
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import cloudscraper from 'cloudscraper';
+// Remove cloudscraper if you're using ScraperAPI now
+// import cloudscraper from 'cloudscraper';
 import { AnimeItem, MetaDetails, Episode } from './types';
 
 const BASE_URL = 'https://www.desidubanime.me';
 const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY || '';
 
-// ─── UPDATED fetchHTML with cloudscraper ────────────────────────
-
-import axios from 'axios';
+// ─── UPDATED fetchHTML with ScraperAPI ──────────────────────────
 
 async function fetchHTML(url: string): Promise<string> {
   try {
     let finalUrl = url;
     if (SCRAPER_API_KEY && SCRAPER_API_KEY !== '') {
-      // Use HTTPS and enable JavaScript rendering
       finalUrl = `https://api.scraperapi.com?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(url)}&render=true`;
     }
 
@@ -32,6 +30,8 @@ async function fetchHTML(url: string): Promise<string> {
     throw new Error(`Failed to fetch: ${url}`);
   }
 }
+
+// ... rest of your code remains the same
 
 function extractSlug(url: string): string {
   const parts = url.split('/').filter(Boolean);
