@@ -7,11 +7,11 @@ export const manifest: Manifest = {
   name: 'DesiDubAnime Scraper',
   description: 'Watch Indian regional dubbed anime from desidubanime.me',
   resources: ['catalog', 'meta', 'stream'],
-  types: ['series', 'movie'],
+  types: ['series'],
   catalogs: [
-    { type: 'series', id: 'desidubanime_popular' },
-    { type: 'movie', id: 'desidubanime_movies' },
+    { type: 'series', id: 'desidubanime_all' },      // Full A‑Z list
+    // { type: 'series', id: 'desidubanime_popular' }, // optional
   ],
-  background: 'https://www.desidubanime.me/static/bg.jpg',
-  logo: 'https://www.desidubanime.me/static/logo.png',
+  background: 'https://www.desidubanime.me/wp-content/uploads/2025/01/Logoo.png',
+  logo: 'https://www.desidubanime.me/wp-content/uploads/2025/01/Logoo.png',
 };
