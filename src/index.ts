@@ -110,29 +110,22 @@ app.get('/manifest.json', (req: Request, res: Response) => {
 //  – id: catalog identifier (e.g., 'desidubanime_popular')
 //  Returns a list of AnimeItem objects in Stremio's format.
 // ────────────────────────────────────────────────────────────────────────────────
+// In index.ts
 app.get('/catalog/:type/:id.json', async (req: Request, res: Response) => {
   const { type, id } = req.params;
   try {
     let items: AnimeItem[] = [];
-    // Only handle our defined catalog id
-    if (id === 'desidubanime_popular' && type === 'series') {
-      // Optional pagination: ?page=N
-      const page = parseInt(req.query.page as string) || 1;
-      items = await getRecentAnime(page);
-    } else if (id === 'desidubanime_movies' && type === 'movie') {
-      // Future: implement movie catalog if needed
-      items = [];
+    if (id === 'desidubanime_all' && type === 'series') {
+      items = await getAllAnime(); // Full A‑Z list
+    } else if (id === 'desidubanime_popular' && type === 'series') {
+      items = await getRecentAnime(); // You can keep this as full list too
     }
-
-    // Convert to Stremio meta format
     const metas = items.map(item => ({
       id: item.id,
       type: item.type,
       name: item.name,
       poster: item.poster,
-      // year: item.year, // if available
     }));
-
     res.json({ metas });
   } catch (error) {
     console.error('Catalog error:', error);
