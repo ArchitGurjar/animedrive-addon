@@ -8,38 +8,62 @@ const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY || '';
 
 // ─── fetchHTML with ScraperAPI ──────────────────────────────────
 
-async function fetchHTML(url: string): Promise<string> {
-  try {
-    let finalUrl = url;
-    if (SCRAPER_API_KEY && SCRAPER_API_KEY !== '') {
-      finalUrl = `https://api.scraperapi.com?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(url)}&render=true&country_code=US`;
+// ─── fetchHTML with Smart Render & Retry ──────────────────────
+
+async function fetchHTML(url: string, retries = 3): Promise<string> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      // Decide whether to use render=true
+      const needsRender = !(
+        url.includes('/az-list/') ||
+        url.includes('/search/') ||
+        url.includes('/page/') // pagination pages are also static
+      );
+
+      let finalUrl = url;
+      if (SCRAPER_API_KEY && SCRAPER_API_KEY !== '') {
+        finalUrl = `https://api.scraperapi.com?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(url)}`;
+        if (needsRender) {
+          finalUrl += '&render=true&country_code=US';
+        }
+      }
+
+      console.log(`[fetch] Attempt ${attempt}/${retries} - ${needsRender ? 'with' : 'without'} render`);
+
+      const response = await axios.get(finalUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+          'Referer': 'https://www.desidubanime.me/',
+        },
+        timeout: needsRender ? 60000 : 30000, // longer timeout for render mode
+      });
+
+      console.log(`[fetch] Response size: ${response.data.length} bytes, status: ${response.status}`);
+
+      // If response is too small, it's probably incomplete
+      if (response.data.length < 5000) {
+        console.warn(`[fetch] Warning: Response is very small (${response.data.length} bytes). Trying again...`);
+        throw new Error(`Incomplete response (${response.data.length} bytes)`);
+      }
+
+      return response.data;
+    } catch (error) {
+      lastError = error;
+      console.error(`[fetch] Attempt ${attempt} failed:`, error.message);
+      if (attempt < retries) {
+        // Exponential backoff: wait 2^attempt seconds before retrying
+        const delay = Math.pow(2, attempt) * 1000;
+        console.log(`[fetch] Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
     }
-
-    console.log(`[fetch] Requesting: ${finalUrl.substring(0, 100)}...`);
-
-    const response = await axios.get(finalUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Referer': 'https://www.desidubanime.me/',
-      },
-      timeout: 60000, // Increased to 60 seconds for render mode
-    });
-
-    // Log response size to detect if we got a full page
-    console.log(`[fetch] Response size: ${response.data.length} bytes`);
-
-    // If response is too small (< 5000 chars), it's probably a Cloudflare page or error
-    if (response.data.length < 5000) {
-      console.warn(`[fetch] Warning: Response is very small (${response.data.length} bytes). Might be incomplete.`);
-    }
-
-    return response.data;
-  } catch (error) {
-    console.error(`[fetch] Error fetching ${url}:`, error);
-    throw new Error(`Failed to fetch: ${url}`);
   }
+
+  throw new Error(`Failed to fetch ${url} after ${retries} attempts: ${lastError?.message}`);
 }
 
 function extractSlug(url: string): string {
