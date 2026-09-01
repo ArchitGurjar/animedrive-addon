@@ -42,60 +42,52 @@ export async function getAllAnime(): Promise<AnimeItem[]> {
   const items: AnimeItem[] = [];
   const seen = new Set<string>();
 
-  // Try multiple selectors for the anime links
-  const selectors = [
-    '.az-list a[href*="/anime/"]',
-    '.letter-section a[href*="/anime/"]',
-    '.anime-grid a[href*="/anime/"]',
-    '.post-list a[href*="/anime/"]',
-    'ul.az-list a[href*="/anime/"]',
-    '.entry-content a[href*="/anime/"]',
-    'a[href*="/anime/"]',
-  ];
+  // Each anime is inside an article with class "anime-card"
+  $('article.anime-card').each((_, article) => {
+    // Title: from h3 > a
+    const titleEl = $(article).find('h3 a').first();
+    const title = titleEl.text().trim();
+    if (!title || title.length < 2) return;
 
-  let found = false;
-  for (const selector of selectors) {
-    const elements = $(selector);
-    if (elements.length) {
-      elements.each((_, el) => {
-        const link = $(el).attr('href');
-        if (!link || !link.includes('/anime/')) return;
+    // Poster: from img inside the card
+    const poster = $(article).find('img').first().attr('src') || '';
 
-        // Title: prefer text, fallback to image alt
-        let title = $(el).text().trim();
-        if (!title || title.length < 2) {
-          title = $(el).find('img').attr('alt') || '';
-        }
-        if (!title || title.length < 2) return;
-
-        // Skip generic "Watch Now" texts
-        if (['watch now', 'play', 'watch', 'now', 'more'].includes(title.toLowerCase())) return;
-
-        const slug = extractSlug(link);
-        if (seen.has(slug)) return;
-        seen.add(slug);
-
-        // Poster: look for img inside the anchor, or in a sibling/parent
-        let poster = $(el).find('img').attr('src') || '';
-        if (!poster) {
-          const parent = $(el).closest('li, div');
-          poster = parent.find('img').first().attr('src') || '';
-        }
-
-        items.push({
-          id: slug,
-          name: title,
-          poster: poster || undefined,
-          type: 'series',
-        });
-      });
-      found = true;
-      break;
+    // Slug: extract from the "Info" button's onclick attribute
+    let slug = '';
+    const infoBtn = $(article).find('button[onclick*="window.location.href="]').first();
+    if (infoBtn.length) {
+      const onclick = infoBtn.attr('onclick') || '';
+      // Extract URL inside the quotes: window.location.href='https://.../anime/xxxx/'
+      const match = onclick.match(/window\.location\.href\s*=\s*['"]([^'"]+)['"]/);
+      if (match && match[1]) {
+        const urlParts = match[1].split('/');
+        slug = urlParts[urlParts.length - 2] || ''; // get last non‑empty part before trailing slash
+      }
     }
-  }
 
-  // Ultimate fallback: any link with /anime/ and a decent title
-  if (!found) {
+    // Fallback: try to extract slug from the watch link (title's href)
+    if (!slug) {
+      const watchLink = titleEl.attr('href') || '';
+      // Remove episode suffix: e.g., "grand-blue-season-3-episode-1" → "grand-blue-season-3"
+      // We'll strip "-episode-1" or similar, but it's not perfect.
+      // Better to skip if no slug found.
+      // For now, we skip.
+      return;
+    }
+
+    if (seen.has(slug)) return;
+    seen.add(slug);
+
+    items.push({
+      id: slug,
+      name: title,
+      poster: poster || undefined,
+      type: 'series',
+    });
+  });
+
+  // If we didn't find any using the article method, fallback to generic links
+  if (items.length === 0) {
     $('a[href*="/anime/"]').each((_, el) => {
       const link = $(el).attr('href');
       if (!link) return;
