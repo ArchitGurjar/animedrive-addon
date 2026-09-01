@@ -3,15 +3,25 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { AnimeItem, MetaDetails, Episode } from './types';
 
+// ─── CONFIGURATION ───────────────────────────────────────────────────
+
 const BASE_URL = 'https://www.desidubanime.me';
+
+// Optional ScraperAPI key (to bypass Cloudflare if needed)
 const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY || '';
 
+// ─── HELPERS ────────────────────────────────────────────────────────
+
+/**
+ * Fetch HTML from a URL, optionally via ScraperAPI.
+ */
 async function fetchHTML(url: string): Promise<string> {
   try {
     let finalUrl = url;
     if (SCRAPER_API_KEY && SCRAPER_API_KEY !== '') {
       finalUrl = `http://api.scraperapi.com?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(url)}`;
     }
+
     const response = await axios.get(finalUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -28,29 +38,58 @@ async function fetchHTML(url: string): Promise<string> {
   }
 }
 
+/**
+ * Extract slug from URL.
+ * Example: "https://www.desidubanime.me/anime/demon-slayer-season-3/" -> "demon-slayer-season-3"
+ */
 function extractSlug(url: string): string {
   const parts = url.split('/').filter(Boolean);
   return parts[parts.length - 1] || parts[parts.length - 2] || url;
 }
 
+/**
+ * Follow redirects to get the final URL.
+ */
+async function followRedirect(url: string): Promise<string> {
+  try {
+    const response = await axios.get(url, {
+      maxRedirects: 5,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+    });
+    return response.request.res.responseUrl || url;
+  } catch (error) {
+    console.warn(`Redirect following failed for ${url}:`, error);
+    return url;
+  }
+}
+
 // ─── CATALOG ────────────────────────────────────────────────────────
 
+/**
+ * Get the list of anime from the homepage.
+ * Uses the "Most Popular" or "Top Airing" sections.
+ * Supports pagination via ?page=N.
+ */
 export async function getRecentAnime(page: number = 1): Promise<AnimeItem[]> {
   const url = page === 1 ? `${BASE_URL}/` : `${BASE_URL}/page/${page}/`;
   const html = await fetchHTML(url);
   const $ = cheerio.load(html);
   const items: AnimeItem[] = [];
 
-  // Try multiple selectors for anime cards
+  // The homepage has multiple sections; we look for anime cards.
+  // Common selectors from the HTML: .flex.gap-5.border-b (Most Popular list)
+  // Also there are grid items in .grid .relative
+  // We'll try multiple selectors.
+
+  // Selector for anime cards in "Most Popular" and other sections
   const cardSelectors = [
-    '.anime-card',
-    '.anime-item',
+    '.flex.gap-5.border-b',          // Most Popular list items
+    '.grid .relative',               // Grid items
+    '.anime-card',                   // Generic
     '.post-item',
-    '.movie-item',
-    '.anime-grid .item',
-    '.anime-list .anime',
-    '.anime-poster',
-    '.entry-content .anime'
+    '.movie-item'
   ];
 
   let found = false;
@@ -58,13 +97,19 @@ export async function getRecentAnime(page: number = 1): Promise<AnimeItem[]> {
     const elements = $(selector);
     if (elements.length > 0) {
       elements.each((_, element) => {
-        const titleElement = $(element).find('a, .title, h3, .anime-title').first();
+        const titleElement = $(element).find('a, .title, h3, .anime-title, .font-medium a').first();
         const title = titleElement.text().trim() || $(element).find('img').attr('alt') || '';
         const link = titleElement.attr('href') || $(element).find('a').attr('href') || '';
         const poster = $(element).find('img').attr('src') || $(element).find('img').attr('data-src') || '';
+
         if (title && link) {
           const slug = extractSlug(link);
-          items.push({ id: slug, name: title, poster: poster || undefined, type: 'series' });
+          items.push({
+            id: slug,
+            name: title,
+            poster: poster || undefined,
+            type: 'series',
+          });
         }
       });
       found = true;
@@ -72,7 +117,7 @@ export async function getRecentAnime(page: number = 1): Promise<AnimeItem[]> {
     }
   }
 
-  // Fallback: look for any link with /anime/
+  // Fallback: look for any link with /anime/ in href
   if (!found) {
     $('a[href*="/anime/"]').each((_, element) => {
       const link = $(element).attr('href');
@@ -81,141 +126,104 @@ export async function getRecentAnime(page: number = 1): Promise<AnimeItem[]> {
       const poster = $(element).find('img').attr('src') || '';
       if (title && link && link.includes('/anime/')) {
         const slug = extractSlug(link);
-        items.push({ id: slug, name: title, poster: poster || undefined, type: 'series' });
+        items.push({
+          id: slug,
+          name: title,
+          poster: poster || undefined,
+          type: 'series',
+        });
       }
     });
   }
 
   // Remove duplicates
-  return Array.from(new Map(items.map(item => [item.id, item])).values());
+  const uniqueItems = Array.from(
+    new Map(items.map(item => [item.id, item])).values()
+  );
+
+  return uniqueItems;
 }
 
 // ─── META ──────────────────────────────────────────────────────────
 
+/**
+ * Get detailed info + episodes for a specific anime.
+ * Uses the anime slug to fetch the anime detail page.
+ */
 export async function getAnimeDetails(animeId: string): Promise<MetaDetails | null> {
-  // Try both /anime/{slug}/ and /{slug}/ patterns
-  let url = `${BASE_URL}/anime/${animeId}/`;
-  let html: string;
-  try {
-    html = await fetchHTML(url);
-  } catch {
-    url = `${BASE_URL}/${animeId}/`;
-    html = await fetchHTML(url);
-  }
-
+  const url = `${BASE_URL}/anime/${animeId}/`;
+  const html = await fetchHTML(url);
   const $ = cheerio.load(html);
 
   // ── Extract Title ──
-  let title = $('h1.entry-title').first().text().trim();
-  if (!title) title = $('.anime-title, .post-title, .entry-header h1').first().text().trim();
+  // Title is in h4 a inside .anime-data, with two language variants.
+  // We'll take the English one (first span) or fallback to text.
+  let title = $('.anime-data h4 a span:first-child, .anime-data h4 a').first().text().trim();
   if (!title) {
-    console.warn(`No title found for: ${animeId}`);
+    title = $('h1.entry-title, .anime-title, .post-title').first().text().trim();
+  }
+  if (!title) {
+    console.warn(`Could not find title for anime: ${animeId}`);
     return null;
   }
 
   // ── Extract Poster ──
-  let poster = $('.poster img, .anime-poster img, .featured-image img, .entry-content img').first().attr('src');
-  if (!poster) poster = $('img[class*="poster"], img[class*="featured"], img[class*="cover"]').first().attr('src');
+  const poster = $('.anime-featured img, .poster img, .anime-poster img, .featured-image img').first().attr('src');
 
   // ── Extract Description ──
-  let description = $('.description, .anime-description, .entry-content p').first().text().trim();
-  if (!description || description.length < 20) description = $('.entry-content').first().text().trim().slice(0, 500);
+  const description = $('.anime-synopsis .prose p, .anime-description, .entry-content p').first().text().trim();
 
   // ── Extract Genres ──
+  // Genres might be in the page, but they are not present in the episode page.
+  // On the anime page, they are often inside .genres or .anime-genres.
   const genre: string[] = [];
-  $('.genres a, .genre a, .anime-genres a, .category a').each((_, el) => {
-    const text = $(el).text().trim();
+  $('.genres a, .genre a, .anime-genres a, .category a, .tags a').each((_, element) => {
+    const text = $(element).text().trim();
     if (text) genre.push(text);
   });
 
   // ── Extract Episodes ──
+  const episodes: Episode[] = [];
 
-  // 1. Try to use WordPress REST API to get post content (if available)
-  let episodes: Episode[] = [];
-  try {
-    const apiUrl = `${BASE_URL}/wp-json/wp/v2/posts?slug=${animeId}`;
-    const apiResponse = await fetchHTML(apiUrl);
-    const posts = JSON.parse(apiResponse);
-    if (Array.isArray(posts) && posts.length > 0) {
-      const content = posts[0].content?.rendered || '';
-      if (content) {
-        // Parse HTML from the content to find episode links
-        const $content = cheerio.load(content);
-        const epLinks = $content('a[href*="/episode/"]');
-        if (epLinks.length > 0) {
-          epLinks.each((index, el) => {
-            const link = $(el).attr('href');
-            const epTitle = $(el).text().trim() || `Episode ${index + 1}`;
-            if (link) {
-              const id = link.split('/').filter(Boolean).pop() || `${animeId}-ep${index + 1}`;
-              episodes.push({
-                season: 1,
-                episode: index + 1,
-                title: epTitle,
-                id: id,
-              });
-            }
-          });
-        }
-      }
-    }
-  } catch (e) {
-    // API failed, fallback to HTML scraping
-  }
+  // On the anime detail page, episodes are inside .episode-list-display-box
+  // Each episode is an <a> with class .episode-list-item
+  $('.episode-list-display-box a.episode-list-item').each((_, element) => {
+    const href = $(element).attr('href');
+    const epNumber = $(element).find('.episode-list-item-number').text().trim();
+    const epTitle = $(element).find('.episode-list-item-title').text().trim();
 
-  // 2. If REST API didn't work, scrape HTML
-  if (episodes.length === 0) {
-    const episodeSelectors = [
-      '.episode-list li a',
-      '.episodes li a',
-      '.episode-list a',
-      '.eplist li a',
-      '.episode-item a',
-      '.anime-episodes a',
-      '#episode-list a',
-      '.entry-content ul li a[href*="/episode/"]',
-      '.entry-content a[href*="/episode/"]',
-      '.post-content a[href*="/episode/"]',
-      '.episode a',
-      'ul.episodes a',
-    ];
-
-    for (const selector of episodeSelectors) {
-      const elements = $(selector);
-      if (elements.length > 0) {
-        elements.each((index, el) => {
-          const link = $(el).attr('href');
-          const epTitle = $(el).text().trim() || `Episode ${index + 1}`;
-          if (link) {
-            const id = link.split('/').filter(Boolean).pop() || `${animeId}-ep${index + 1}`;
-            episodes.push({
-              season: 1,
-              episode: index + 1,
-              title: epTitle,
-              id: id,
-            });
-          }
-        });
-        break;
-      }
-    }
-
-    // Last resort: look for any link containing "/episode/"
-    if (episodes.length === 0) {
-      $('a[href*="/episode/"]').each((index, el) => {
-        const link = $(el).attr('href');
-        const epTitle = $(el).text().trim() || `Episode ${index + 1}`;
-        if (link) {
-          const id = link.split('/').filter(Boolean).pop() || `${animeId}-ep${index + 1}`;
-          episodes.push({
-            season: 1,
-            episode: index + 1,
-            title: epTitle,
-            id: id,
-          });
-        }
+    if (href && epNumber) {
+      const episodeNum = parseInt(epNumber, 10);
+      // Generate a unique ID from the href (slug)
+      const id = href.split('/').filter(Boolean).pop() || `${animeId}-ep${episodeNum}`;
+      episodes.push({
+        season: 1, // The site doesn't show seasons separately; we assume season 1.
+        episode: episodeNum,
+        title: epTitle || `Episode ${episodeNum}`,
+        id: id,
       });
     }
+  });
+
+  // If no episodes found, try a fallback: look for any link containing "/watch/"
+  if (episodes.length === 0) {
+    $('a[href*="/watch/"]').each((_, element) => {
+      const href = $(element).attr('href');
+      if (!href) return;
+      // Try to extract episode number from the URL or text
+      const epText = $(element).text().trim();
+      const match = epText.match(/\d+/) || href.match(/episode-(\d+)/);
+      if (match) {
+        const episodeNum = parseInt(match[1], 10);
+        const id = href.split('/').filter(Boolean).pop() || `${animeId}-ep${episodeNum}`;
+        episodes.push({
+          season: 1,
+          episode: episodeNum,
+          title: epText || `Episode ${episodeNum}`,
+          id: id,
+        });
+      }
+    });
   }
 
   console.log(`[Meta] Found ${episodes.length} episodes for ${animeId}`);
@@ -233,73 +241,39 @@ export async function getAnimeDetails(animeId: string): Promise<MetaDetails | nu
 
 // ─── STREAM ────────────────────────────────────────────────────────
 
+/**
+ * Get the video URL for a specific episode.
+ * The episode ID is the slug from the watch page URL.
+ */
 export async function getEpisodeStream(episodeId: string): Promise<string | null> {
-  // Try multiple URL patterns
-  const urlPatterns = [
-    `${BASE_URL}/episode/${episodeId}/`,
-    `${BASE_URL}/watch/${episodeId}/`,
-    `${BASE_URL}/ep/${episodeId}/`,
-    `${BASE_URL}/${episodeId}/`,
-  ];
-
-  let html = '';
-  let successUrl = '';
-  for (const url of urlPatterns) {
-    try {
-      html = await fetchHTML(url);
-      successUrl = url;
-      break;
-    } catch (e) {
-      // continue
-    }
-  }
-  if (!html) {
-    console.warn(`Could not fetch episode page for: ${episodeId}`);
-    return null;
-  }
-
+  // The episodeId is the last part of the watch page URL.
+  // For example, "kimetsu-no-yaiba-katanakaji-no-sato-hen-season-3-episode-1"
+  const url = `${BASE_URL}/watch/${episodeId}/`;
+  const html = await fetchHTML(url);
   const $ = cheerio.load(html);
 
-  // Look for iframe
-  const iframeSelectors = [
-    'iframe[src*="player"]',
-    'iframe[src*="embed"]',
-    'iframe[src*="video"]',
-    'iframe[src*="vidsrc"]',
-    'iframe[src*="stream"]',
-    '.video-player iframe',
-    '.embed-container iframe',
-    '.player iframe',
-    '#player iframe',
-    '#video-player iframe',
-    'iframe'
-  ];
-
-  for (const selector of iframeSelectors) {
-    const iframeSrc = $(selector).first().attr('src');
-    if (iframeSrc) {
-      if (iframeSrc.startsWith('//')) return `https:${iframeSrc}`;
-      if (iframeSrc.startsWith('/')) return `${BASE_URL}${iframeSrc}`;
-      return iframeSrc;
-    }
+  // Look for the iframe inside .episode-player-box
+  const iframeSrc = $('.episode-player-box iframe').first().attr('src');
+  if (iframeSrc) {
+    if (iframeSrc.startsWith('//')) return `https:${iframeSrc}`;
+    if (iframeSrc.startsWith('/')) return `${BASE_URL}${iframeSrc}`;
+    return iframeSrc;
   }
 
-  // Look for video source
-  const videoSrc = $('video source').first().attr('src') || $('video').first().attr('src');
+  // Fallback: look for any iframe
+  const anyIframe = $('iframe[src*="embed"], iframe[src*="player"], iframe[src*="video"]').first().attr('src');
+  if (anyIframe) {
+    if (anyIframe.startsWith('//')) return `https:${anyIframe}`;
+    if (anyIframe.startsWith('/')) return `${BASE_URL}${anyIframe}`;
+    return anyIframe;
+  }
+
+  // Fallback: look for video source
+  const videoSrc = $('video source').first().attr('src');
   if (videoSrc) {
     if (videoSrc.startsWith('//')) return `https:${videoSrc}`;
     if (videoSrc.startsWith('/')) return `${BASE_URL}${videoSrc}`;
     return videoSrc;
-  }
-
-  // Look for data attributes
-  const dataSrc = $('[data-src], [data-video], [data-stream]').first().attr('data-src') ||
-                  $('[data-src], [data-video], [data-stream]').first().attr('data-video') ||
-                  $('[data-src], [data-video], [data-stream]').first().attr('data-stream');
-  if (dataSrc) {
-    if (dataSrc.startsWith('//')) return `https:${dataSrc}`;
-    if (dataSrc.startsWith('/')) return `${BASE_URL}${dataSrc}`;
-    return dataSrc;
   }
 
   console.warn(`No stream found for episode: ${episodeId}`);
