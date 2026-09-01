@@ -42,7 +42,7 @@ export async function getAllAnime(): Promise<AnimeItem[]> {
   const items: AnimeItem[] = [];
   const seen = new Set<string>();
 
-  // Try the most common A‑Z list structure: <ul class="az-list"> <li> <a>
+  // Try multiple selectors for the anime links
   const selectors = [
     '.az-list a[href*="/anime/"]',
     '.letter-section a[href*="/anime/"]',
@@ -50,7 +50,7 @@ export async function getAllAnime(): Promise<AnimeItem[]> {
     '.post-list a[href*="/anime/"]',
     'ul.az-list a[href*="/anime/"]',
     '.entry-content a[href*="/anime/"]',
-    'a[href*="/anime/"]', // fallback
+    'a[href*="/anime/"]',
   ];
 
   let found = false;
@@ -61,24 +61,23 @@ export async function getAllAnime(): Promise<AnimeItem[]> {
         const link = $(el).attr('href');
         if (!link || !link.includes('/anime/')) return;
 
-        // Get title: prefer text of the anchor, but if it's an image, get alt text
+        // Title: prefer text, fallback to image alt
         let title = $(el).text().trim();
         if (!title || title.length < 2) {
           title = $(el).find('img').attr('alt') || '';
         }
         if (!title || title.length < 2) return;
 
-        // Skip generic texts
+        // Skip generic "Watch Now" texts
         if (['watch now', 'play', 'watch', 'now', 'more'].includes(title.toLowerCase())) return;
 
         const slug = extractSlug(link);
         if (seen.has(slug)) return;
         seen.add(slug);
 
-        // Poster: look for an image inside the anchor or a sibling
+        // Poster: look for img inside the anchor, or in a sibling/parent
         let poster = $(el).find('img').attr('src') || '';
         if (!poster) {
-          // Sometimes the poster is in a previous sibling or parent
           const parent = $(el).closest('li, div');
           poster = parent.find('img').first().attr('src') || '';
         }
@@ -95,7 +94,7 @@ export async function getAllAnime(): Promise<AnimeItem[]> {
     }
   }
 
-  // If still no items, fallback to any link with /anime/ that has a title longer than 2 chars
+  // Ultimate fallback: any link with /anime/ and a decent title
   if (!found) {
     $('a[href*="/anime/"]').each((_, el) => {
       const link = $(el).attr('href');
