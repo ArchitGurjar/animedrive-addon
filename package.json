@@ -1,7 +1,8 @@
 {
-  "name": "animedrive-addon",
+ {
+  "name": "desidubanime-addon",
   "version": "1.0.0",
-  "description": "A Node.js + Express Stremio addon that scrapes animedrive.me for anime content",
+  "description": "Stremio addon for DesiDubAnime.me",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
