@@ -1,22 +1,35 @@
 // src/index.ts
+// ────────────────────────────────────────────────────────────────────────────────
+//  IMPORTS
+// ────────────────────────────────────────────────────────────────────────────────
 import express, { Request, Response } from 'express';
 import { manifest } from './manifest';
 import { getRecentAnime, getAnimeDetails, getEpisodeStream } from './scraper';
 import { AnimeItem } from './types';
 
+// ────────────────────────────────────────────────────────────────────────────────
+//  EXPRESS APP INIT
+// ────────────────────────────────────────────────────────────────────────────────
 const app = express();
 
-// ─── CORS ──────────────────────────────────────────────────────────
-
+// ────────────────────────────────────────────────────────────────────────────────
+//  CORS MIDDLEWARE
+//  Stremio / UltraStream need cross‑origin access to your addon.
+// ────────────────────────────────────────────────────────────────────────────────
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
-  if (req.method === 'OPTIONS') res.sendStatus(200);
-  else next();
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+  } else {
+    next();
+  }
 });
 
-// ─── ROOT – LANDING PAGE ─────────────────────────────────────────
-
+// ────────────────────────────────────────────────────────────────────────────────
+//  ROOT – LANDING PAGE
+//  A simple HTML page for users to copy the manifest URL or install via Stremio.
+// ────────────────────────────────────────────────────────────────────────────────
 app.get('/', (req: Request, res: Response) => {
   const manifestUrl = `https://${req.get('host')}/manifest.json`;
   res.send(`
@@ -82,28 +95,42 @@ app.get('/', (req: Request, res: Response) => {
   `);
 });
 
-// ─── API ROUTES ────────────────────────────────────────────────────
-
+// ────────────────────────────────────────────────────────────────────────────────
+//  MANIFEST ENDPOINT
+//  Returns the addon manifest (id, name, resources, catalogs, etc.)
+// ────────────────────────────────────────────────────────────────────────────────
 app.get('/manifest.json', (req: Request, res: Response) => {
   res.json(manifest);
 });
 
+// ────────────────────────────────────────────────────────────────────────────────
+//  CATALOG ENDPOINT
+//  /catalog/:type/:id.json
+//  – type: 'series' or 'movie'
+//  – id: catalog identifier (e.g., 'desidubanime_popular')
+//  Returns a list of AnimeItem objects in Stremio's format.
+// ────────────────────────────────────────────────────────────────────────────────
 app.get('/catalog/:type/:id.json', async (req: Request, res: Response) => {
   const { type, id } = req.params;
   try {
     let items: AnimeItem[] = [];
+    // Only handle our defined catalog id
     if (id === 'desidubanime_popular' && type === 'series') {
+      // Optional pagination: ?page=N
       const page = parseInt(req.query.page as string) || 1;
       items = await getRecentAnime(page);
     } else if (id === 'desidubanime_movies' && type === 'movie') {
+      // Future: implement movie catalog if needed
       items = [];
     }
 
+    // Convert to Stremio meta format
     const metas = items.map(item => ({
       id: item.id,
       type: item.type,
       name: item.name,
       poster: item.poster,
+      // year: item.year, // if available
     }));
 
     res.json({ metas });
@@ -113,6 +140,13 @@ app.get('/catalog/:type/:id.json', async (req: Request, res: Response) => {
   }
 });
 
+// ────────────────────────────────────────────────────────────────────────────────
+//  META ENDPOINT
+//  /meta/:type/:id.json
+//  – type: 'series' or 'movie'
+//  – id: anime slug (e.g., 'demon-slayer-season-3')
+//  Returns detailed info + episode list in Stremio's video format.
+// ────────────────────────────────────────────────────────────────────────────────
 app.get('/meta/:type/:id.json', async (req: Request, res: Response) => {
   const { type, id } = req.params;
   try {
@@ -132,7 +166,7 @@ app.get('/meta/:type/:id.json', async (req: Request, res: Response) => {
         season: ep.season,
         episode: ep.episode,
         title: ep.title,
-        id: ep.id,
+        id: ep.id,           // this ID is used in the stream endpoint
       })),
     };
 
@@ -143,6 +177,13 @@ app.get('/meta/:type/:id.json', async (req: Request, res: Response) => {
   }
 });
 
+// ────────────────────────────────────────────────────────────────────────────────
+//  STREAM ENDPOINT
+//  /stream/:type/:id.json
+//  – type: 'series' or 'movie' (ignored, just for Stremio compatibility)
+//  – id: episode slug (e.g., 'kimetsu-no-yaiba-katanakaji-no-sato-hen-season-3-episode-1')
+//  Returns a stream URL (iframe or direct video) in Stremio's format.
+// ────────────────────────────────────────────────────────────────────────────────
 app.get('/stream/:type/:id.json', async (req: Request, res: Response) => {
   const { type, id } = req.params;
   try {
@@ -150,22 +191,42 @@ app.get('/stream/:type/:id.json', async (req: Request, res: Response) => {
     if (!streamUrl) {
       return res.status(404).json({ error: 'Stream not found' });
     }
-    res.json({ streams: [{ url: streamUrl, title: 'DesiDubAnime Stream' }] });
+
+    // Stremio expects an array of streams
+    res.json({
+      streams: [
+        {
+          url: streamUrl,
+          title: 'DesiDubAnime Stream',
+        },
+      ],
+    });
   } catch (error) {
     console.error('Stream error:', error);
     res.status(500).json({ error: 'Failed to fetch stream' });
   }
 });
 
+// ────────────────────────────────────────────────────────────────────────────────
+//  HEALTH CHECK
+//  Used by uptime monitors to keep Render free tier alive.
+// ────────────────────────────────────────────────────────────────────────────────
 app.get('/health', (req: Request, res: Response) => {
   res.send('OK');
 });
 
+// ────────────────────────────────────────────────────────────────────────────────
+//  404 CATCH‑ALL
+// ────────────────────────────────────────────────────────────────────────────────
 app.use((req: Request, res: Response) => {
   res.status(404).json({ error: 'Not found' });
 });
 
+// ────────────────────────────────────────────────────────────────────────────────
+//  START SERVER
+//  Use PORT from environment (Render sets it) or fallback to 7000.
+// ────────────────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => {
-  console.log(`DesiDubAnime addon running on port ${PORT}`);
+  console.log(`✅ DesiDubAnime addon running on port ${PORT}`);
 });
