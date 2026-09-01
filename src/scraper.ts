@@ -226,6 +226,7 @@ export async function getEpisodeStream(episodeId: string): Promise<string | null
     const html = await fetchHTML(url);
     const $ = cheerio.load(html);
 
+    // --- Method 1: Look for iframe ---
     let iframeSrc = $('.episode-player-box iframe').first().attr('src');
     if (iframeSrc) {
       if (iframeSrc.startsWith('//')) return `https:${iframeSrc}`;
@@ -233,18 +234,30 @@ export async function getEpisodeStream(episodeId: string): Promise<string | null
       return iframeSrc;
     }
 
-    iframeSrc = $('iframe[src*="embed"], iframe[src*="player"], iframe[src*="video"]').first().attr('src');
-    if (iframeSrc) {
-      if (iframeSrc.startsWith('//')) return `https:${iframeSrc}`;
-      if (iframeSrc.startsWith('/')) return `${BASE_URL}${iframeSrc}`;
-      return iframeSrc;
+    // --- Method 2: Look for gdmrfid input ---
+    const fileId = $('input#gdmrfid').val() as string;
+    if (fileId) {
+      // Try the main domain pattern
+      const streamUrl = `https://ddn.iqsmartgames.com/file/${fileId}`;
+      return streamUrl;
     }
 
+    // --- Method 3: Look for video source ---
     const videoSrc = $('video source').first().attr('src') || $('video').first().attr('src');
     if (videoSrc) {
       if (videoSrc.startsWith('//')) return `https:${videoSrc}`;
       if (videoSrc.startsWith('/')) return `${BASE_URL}${videoSrc}`;
       return videoSrc;
+    }
+
+    // --- Method 4: Look for data attributes ---
+    const dataSrc = $('[data-src], [data-video], [data-stream]').first().attr('data-src') ||
+                    $('[data-src], [data-video], [data-stream]').first().attr('data-video') ||
+                    $('[data-src], [data-video], [data-stream]').first().attr('data-stream');
+    if (dataSrc) {
+      if (dataSrc.startsWith('//')) return `https:${dataSrc}`;
+      if (dataSrc.startsWith('/')) return `${BASE_URL}${dataSrc}`;
+      return dataSrc;
     }
 
     console.warn(`[Stream] No video found for ${episodeId}`);
