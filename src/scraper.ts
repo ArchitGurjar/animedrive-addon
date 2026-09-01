@@ -178,26 +178,36 @@ export async function getAnimeDetails(animeId: string): Promise<MetaDetails | nu
   });
 
   // ─── Episodes ──────────────────────────────────────────────────
-  const episodes: Episode[] = [];
+const episodes: Episode[] = [];
+const seenIds = new Set<string>();
 
-  // Primary: episode list from the anime page
-  // The container has class "episode-list-display-box" and each episode is an <a> with class "episode-list-item"
-  $('.episode-list-display-box a.episode-list-item').each((_, el) => {
-    const href = $(el).attr('href');
-    const epNum = $(el).find('.episode-list-item-number').text().trim();
-    const epTitle = $(el).find('.episode-list-item-title').text().trim();
+// Primary: episode list from the anime page
+$('.episode-list-display-box a.episode-list-item').each((_, el) => {
+  const href = $(el).attr('href');
+  const epNum = $(el).find('.episode-list-item-number').text().trim();
+  const epTitle = $(el).find('.episode-list-item-title').text().trim();
 
-    if (href && epNum) {
-      const num = parseInt(epNum, 10);
-      const id = href.split('/').filter(Boolean).pop() || `${animeId}-ep${num}`;
-      episodes.push({
-        season: 1,
-        episode: num,
-        title: epTitle || `Episode ${num}`,
-        id: id,
-      });
-    }
+  // Skip if it's a "Watch Now" button (has no episode number or title is generic)
+  if (!epNum || !href) return;
+  if (epTitle.toLowerCase().includes('watch now')) return;
+
+  const num = parseInt(epNum, 10);
+  if (isNaN(num)) return;
+
+  const id = href.split('/').filter(Boolean).pop() || `${animeId}-ep${num}`;
+
+  // Avoid duplicates
+  if (seenIds.has(id)) return;
+  seenIds.add(id);
+
+  episodes.push({
+    season: 1,
+    episode: num,
+    title: epTitle || `Episode ${num}`,
+    id: id,
   });
+});
+
 
   // Fallback 1: any link to /watch/
   if (episodes.length === 0) {
