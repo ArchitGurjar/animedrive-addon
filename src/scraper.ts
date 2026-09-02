@@ -457,34 +457,31 @@ export async function getEpisodeStream(episodeId: string): Promise<string | null
  */
 async function extractDirectVideo(embedUrl: string): Promise<string | null> {
   try {
-    // Build the ScraperAPI URL with render=true so JavaScript executes
     let finalUrl = embedUrl;
     if (SCRAPER_API_KEY && SCRAPER_API_KEY !== '') {
       finalUrl = `https://api.scraperapi.com?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(embedUrl)}&render=true&country_code=US`;
     }
 
-    // Fetch the embed page
     const response = await axios.get(finalUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
       },
-      timeout: 60000, // 60 seconds for render
+      timeout: 60000,
     });
 
     const html = response.data;
     const $ = cheerio.load(html);
 
-    // 1. Look for <video> element with a src attribute
+    // ─── 1. Video element / source ──────────────────────────────
     let videoSrc = $('video').first().attr('src') || $('video source').first().attr('src');
     if (videoSrc) {
-      // Normalize the URL
       if (videoSrc.startsWith('//')) return `https:${videoSrc}`;
       if (videoSrc.startsWith('/')) return `https://${new URL(embedUrl).hostname}${videoSrc}`;
       return videoSrc;
     }
 
-    // 2. Look for data-* attributes that might contain the video URL
+    // ─── 2. data-src / data-video / data-stream ────────────────
     videoSrc = $('[data-src], [data-video], [data-stream]').first().attr('data-src') ||
                $('[data-src], [data-video], [data-stream]').first().attr('data-video') ||
                $('[data-src], [data-video], [data-stream]').first().attr('data-stream');
@@ -494,15 +491,71 @@ async function extractDirectVideo(embedUrl: string): Promise<string | null> {
       return videoSrc;
     }
 
-    // 3. Search inside <script> tags for .m3u8 (HLS) or .mp4 URLs
+    // ─── 3. Search inside <script> tags ────────────────────────
     const scriptContent = $('script').map((_, el) => $(el).html() || '').get().join('\n');
-    const hlsMatch = scriptContent.match(/https?:\/\/[^\s"']+\.m3u8[^\s"']*/);
-    if (hlsMatch) return hlsMatch[0];
 
-    const mp4Match = scriptContent.match(/https?:\/\/[^\s"']+\.mp4[^\s"']*/);
-    if (mp4Match) return mp4Match[0];
+    // 3a. HLS (.m3u8)
+    let match = scriptContent.match(/https?:\/\/[^\s"']+\.m3u8[^\s"']*/);
+    if (match) return match[0];
 
-    // If none of the above worked, we didn't find a direct video
+    // 3b. MP4
+    match = scriptContent.match(/https?:\/\/[^\s"']+\.mp4[^\s"']*/);
+    if (match) return match[0];
+
+    // 3c. WebM
+    match = scriptContent.match(/https?:\/\/[^\s"']+\.webm[^\s"']*/);
+    if (match) return match[0];
+
+    // 3d. Any video URL pattern (generic)
+    match = scriptContent.match(/https?:\/\/[^\s"']+\.(?:mp4|m3u8|webm)[^\s"']*/i);
+    if (match) return match[0];
+
+    // ─── 4. Look for window.location / player config ──────────
+    // Some embed pages redirect via JS or store URL in a variable
+    let redirectMatch = scriptContent.match(/window\.location\.(?:href|replace)\s*=\s*['"]([^'"]+)['"]/);
+    if (redirectMatch && redirectMatch[1]) {
+      // Follow the redirect (could be another embed or direct video)
+      const redirectUrl = redirectMatch[1];
+      if (redirectUrl.startsWith('http')) {
+        // Recursive call to handle the redirected URL
+        return await extractDirectVideo(redirectUrl);
+      }
+    }
+
+    // 5. Look for fileId and construct IQSmartGames direct URL (if pattern matches)
+    // Many embed pages from desidubanime.me use IQSmartGames
+    const fileIdMatch = html.match(/gdmrfid\s*value\s*=\s*['"]([^'"]+)['"]/);
+    if (fileIdMatch && fileIdMatch[1]) {
+      const fileId = fileIdMatch[1];
+      // Try constructing the direct URL from known patterns
+      // This is specific to IQSmartGames domain
+      const possibleUrls = [
+        `https://ddn.iqsmartgames.com/file/${fileId}`,
+        `https://cdn.iqsmartgames.com/file/${fileId}`,
+        `https://pro.iqsmartgames.com/file/${fileId}`,
+      ];
+      for (const url of possibleUrls) {
+        // Verify if it's a valid video URL (head request)
+        try {
+          const head = await axios.head(url, { timeout: 5000 });
+          if (head.status === 200 && head.headers['content-type']?.startsWith('video/')) {
+            return url;
+          }
+        } catch (_) {}
+      }
+    }
+
+    // ─── 6. Look for encoded / obfuscated URLs (common on some hosts) ───
+    // Sometimes video URL is base64 encoded in the script
+    const b64Match = scriptContent.match(/atob\s*\(\s*['"]([^'"]+)['"]\s*\)/);
+    if (b64Match) {
+      try {
+        const decoded = Buffer.from(b64Match[1], 'base64').toString('utf-8');
+        const videoUrlMatch = decoded.match(/https?:\/\/[^\s"']+\.(?:mp4|m3u8|webm)[^\s"']*/i);
+        if (videoUrlMatch) return videoUrlMatch[0];
+      } catch (_) {}
+    }
+
     console.warn(`[Stream] No direct video found in embed page`);
     return null;
   } catch (error) {
