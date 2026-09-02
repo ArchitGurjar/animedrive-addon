@@ -11,6 +11,7 @@ import { AnimeItem, MetaDetails, Episode } from './types';
 // ──────────────────────────────────────────────────────────────────────────────
 const BASE_URL = 'https://www.desidubanime.me';
 const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY || '';
+const PAGE_SIZE = 20; // For catalog pagination
 
 // ──────────────────────────────────────────────────────────────────────────────
 //  HELPER: fetchHTML – Smart fetch with retry & render decision
@@ -69,26 +70,38 @@ function extractSlug(url: string): string {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-//  CATALOG: getAllAnime – with pagination support (if any)
+//  HELPER: decodeBase64 – for embed URLs
+// ──────────────────────────────────────────────────────────────────────────────
+function decodeBase64(encoded: string): string {
+  try {
+    return Buffer.from(encoded, 'base64').toString('utf-8');
+  } catch {
+    return encoded;
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+//  CATALOG: getAllAnime – with pagination
 // ──────────────────────────────────────────────────────────────────────────────
 export async function getAllAnime(page: number = 1): Promise<AnimeItem[]> {
-  // The site uses a single A-Z list, but if pagination exists, we can handle it.
-  // Currently, the A-Z list shows all anime on one page.
   const url = page === 1 ? `${BASE_URL}/az-list/` : `${BASE_URL}/az-list/page/${page}/`;
   const html = await fetchHTML(url);
   const $ = cheerio.load(html);
   const items: AnimeItem[] = [];
   const seen = new Set<string>();
 
-  // Primary selector: article.anime-card
+  // Each anime card: article.anime-card
   $('article.anime-card').each((_, article) => {
+    // Title: from h3 a
     const titleEl = $(article).find('h3 a').first();
     const rawTitle = titleEl.text().trim();
     const title = rawTitle.split('\n')[0].trim();
     if (!title || title.length < 2) return;
 
+    // Poster: first img inside card
     const poster = $(article).find('img').first().attr('src') || '';
 
+    // Slug: from the "Info" button's onclick
     let slug = '';
     const infoBtn = $(article).find('button[onclick*="window.location.href="]').first();
     if (infoBtn.length) {
@@ -98,6 +111,12 @@ export async function getAllAnime(page: number = 1): Promise<AnimeItem[]> {
         const urlParts = match[1].split('/');
         slug = urlParts[urlParts.length - 2] || '';
       }
+    }
+
+    // Fallback: look for a direct link to /anime/
+    if (!slug) {
+      const animeLink = $(article).find('a[href*="/anime/"]').first().attr('href');
+      if (animeLink) slug = extractSlug(animeLink);
     }
 
     if (!slug) return;
@@ -112,13 +131,15 @@ export async function getAllAnime(page: number = 1): Promise<AnimeItem[]> {
     });
   });
 
-  // Fallback: generic links
+  // Fallback: generic links if no cards found
   if (items.length === 0) {
     $('a[href*="/anime/"]').each((_, el) => {
       const link = $(el).attr('href');
       if (!link) return;
       let title = $(el).text().trim();
-      if (!title || title.length < 2) title = $(el).find('img').attr('alt') || '';
+      if (!title || title.length < 2) {
+        title = $(el).find('img').attr('alt') || '';
+      }
       if (!title || title.length < 2) return;
       if (['watch now', 'play', 'watch', 'now'].includes(title.toLowerCase())) return;
       const slug = extractSlug(link);
@@ -129,33 +150,34 @@ export async function getAllAnime(page: number = 1): Promise<AnimeItem[]> {
     });
   }
 
-  // Check for next page (pagination)
-  const nextPageLink = $('a.next.page-numbers, a[rel="next"]').attr('href');
-  if (nextPageLink) {
-    // This indicates there are more pages; we could recursively fetch them,
-    // but for simplicity we only fetch the first page. If you want all, uncomment:
-    // const nextPageNum = page + 1;
-    // const more = await getAllAnime(nextPageNum);
-    // items.push(...more);
-  }
-
-  console.log(`[Catalog] Found ${items.length} anime from page ${page}`);
+  console.log(`[Catalog] Found ${items.length} anime on page ${page}`);
   return items;
 }
 
-// Legacy
+// ──────────────────────────────────────────────────────────────────────────────
+//  CATALOG: getRecentAnime – alias for backward compatibility
+// ──────────────────────────────────────────────────────────────────────────────
 export async function getRecentAnime(page: number = 1): Promise<AnimeItem[]> {
   return getAllAnime(page);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-//  META: getAnimeDetails – Enhanced with more selectors
+//  META: getAnimeDetails – with REST API episodes
 // ──────────────────────────────────────────────────────────────────────────────
-export async function getAnimeDetails(animeId: string): Promise<MetaDetails | null> {
-  const url = `${BASE_URL}/anime/${animeId}/`;
-  console.log(`[Meta] Fetching: ${url}`);
-  const html = await fetchHTML(url);
+export async function getAnimeDetails(animeSlug: string): Promise<MetaDetails | null> {
+  const detailUrl = `${BASE_URL}/anime/${animeSlug}/`;
+  console.log(`[Meta] Fetching: ${detailUrl}`);
+  const html = await fetchHTML(detailUrl);
   const $ = cheerio.load(html);
+
+  // ── Extract Anime Post ID ──
+  let animeId: number | null = null;
+  const idScript = html.match(/var\s+current_post_data_id\s*=\s*(\d+);/);
+  if (idScript) animeId = parseInt(idScript[1], 10);
+  if (!animeId) {
+    console.warn(`[Meta] Could not find anime ID for ${animeSlug}`);
+    // Fallback: try to get from a meta tag? We'll skip.
+  }
 
   // ── TITLE ──
   let title = $('.anime-data h4 a span:first-child, .anime-data h4 a').first().text().trim();
@@ -163,7 +185,7 @@ export async function getAnimeDetails(animeId: string): Promise<MetaDetails | nu
   if (!title) title = $('h1').first().text().trim();
   title = title.split('\n')[0].trim();
   if (!title) {
-    console.warn(`[Meta] No title for ${animeId}`);
+    console.warn(`[Meta] No title for ${animeSlug}`);
     return null;
   }
 
@@ -171,7 +193,12 @@ export async function getAnimeDetails(animeId: string): Promise<MetaDetails | nu
   const poster = $('.anime-featured img, .poster img, .anime-poster img').first().attr('src');
 
   // ── DESCRIPTION ──
-  const description = $('.anime-synopsis .prose p, .anime-description, .entry-content p').first().text().trim() || 'No description available.';
+  let description = $('.anime-synopsis .prose p, .anime-description, .entry-content p').first().text().trim();
+  if (!description) {
+    // Fallback: from the overview section
+    description = $('section[aria-label="Anime Overview"] p').first().text().trim();
+  }
+  description = description || 'No description available.';
 
   // ── GENRES ──
   const genre: string[] = [];
@@ -187,73 +214,71 @@ export async function getAnimeDetails(animeId: string): Promise<MetaDetails | nu
   }
 
   // ── EPISODES ──
-  const episodes: Episode[] = [];
-  const seenIds = new Set<string>();
+  let episodes: Episode[] = [];
 
-  // Primary: .episode-list-display-box a.episode-list-item
-  $('.episode-list-display-box a.episode-list-item').each((_, el) => {
-    const href = $(el).attr('href');
-    const epNum = $(el).find('.episode-list-item-number').text().trim();
-    const epTitle = $(el).find('.episode-list-item-title').text().trim();
+  // Try REST API if we have animeId
+  if (animeId) {
+    try {
+      const restUrl = `${BASE_URL}/wp-json/wp/v2/episode?parent=${animeId}&per_page=100&_fields=id,slug,title,content`;
+      console.log(`[Meta] Fetching episodes from REST API: ${restUrl}`);
+      const response = await axios.get(restUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        timeout: 10000,
+      });
+      const data = response.data;
+      if (Array.isArray(data) && data.length > 0) {
+        episodes = data.map((ep: any) => {
+          const slug = ep.slug || '';
+          // Extract episode number from slug: look for "episode-(\d+)" or number at end
+          let epNum = 0;
+          const numMatch = slug.match(/episode-(\d+)/) || slug.match(/-(\d+)$/);
+          if (numMatch) epNum = parseInt(numMatch[1], 10);
+          const titleText = ep.title?.rendered || ep.title || `Episode ${epNum}`;
+          return {
+            season: 1, // The site doesn't show seasons; we assume season 1
+            episode: epNum,
+            title: titleText,
+            id: slug,
+          };
+        });
+        // Sort by episode number
+        episodes.sort((a, b) => a.episode - b.episode);
+        console.log(`[Meta] Found ${episodes.length} episodes via REST API`);
+      }
+    } catch (error) {
+      console.warn(`[Meta] REST API failed, falling back to HTML scraping:`, error.message);
+    }
+  }
 
-    if (!epNum || !href) return;
-    if (epTitle.toLowerCase().includes('watch now')) return;
-
-    const num = parseInt(epNum, 10);
-    if (isNaN(num)) return;
-
-    const id = href.split('/').filter(Boolean).pop() || `${animeId}-ep${num}`;
-    if (seenIds.has(id)) return;
-    seenIds.add(id);
-
-    episodes.push({
-      season: 1,
-      episode: num,
-      title: epTitle || `Episode ${num}`,
-      id: id,
-    });
-  });
-
-  // Fallback 1: any link to /watch/
+  // Fallback: try to scrape episodes from the detail page (if any static list)
   if (episodes.length === 0) {
+    // Look for any links to /watch/ in the page
     $('a[href*="/watch/"]').each((_, el) => {
       const href = $(el).attr('href');
       if (!href) return;
+      // Avoid duplicate and only take if it's an episode link (contains episode in slug)
+      if (!href.includes('-episode-')) return;
       const text = $(el).text().trim();
       const match = text.match(/\d+/) || href.match(/episode-(\d+)/);
       if (match) {
         const num = parseInt(match[1], 10);
-        const id = href.split('/').filter(Boolean).pop() || `${animeId}-ep${num}`;
-        if (!seenIds.has(id)) {
-          seenIds.add(id);
-          episodes.push({ season: 1, episode: num, title: text || `Episode ${num}`, id });
+        const slug = extractSlug(href);
+        if (!episodes.some(e => e.id === slug)) {
+          episodes.push({
+            season: 1,
+            episode: num,
+            title: text || `Episode ${num}`,
+            id: slug,
+          });
         }
       }
     });
+    episodes.sort((a, b) => a.episode - b.episode);
+    console.log(`[Meta] Found ${episodes.length} episodes via HTML fallback`);
   }
-
-  // Fallback 2: /episode/ links
-  if (episodes.length === 0) {
-    $('a[href*="/episode/"]').each((_, el) => {
-      const href = $(el).attr('href');
-      if (!href) return;
-      const text = $(el).text().trim();
-      const match = text.match(/\d+/) || href.match(/episode-(\d+)/);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        const id = href.split('/').filter(Boolean).pop() || `${animeId}-ep${num}`;
-        if (!seenIds.has(id)) {
-          seenIds.add(id);
-          episodes.push({ season: 1, episode: num, title: text || `Episode ${num}`, id });
-        }
-      }
-    });
-  }
-
-  console.log(`[Meta] Found ${episodes.length} episodes for ${animeId}`);
 
   return {
-    id: animeId,
+    id: animeSlug,
     name: title,
     poster: poster || undefined,
     type: 'series',
@@ -264,41 +289,56 @@ export async function getAnimeDetails(animeId: string): Promise<MetaDetails | nu
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-//  STREAM: getEpisodeStream – Enhanced with multiple embed extraction
+//  STREAM: getEpisodeStream – Gets video URL for an episode
 // ──────────────────────────────────────────────────────────────────────────────
-export async function getEpisodeStream(episodeId: string): Promise<string | null> {
-  const watchUrl = `${BASE_URL}/watch/${episodeId}/`;
+export async function getEpisodeStream(episodeSlug: string): Promise<string | null> {
+  const watchUrl = `${BASE_URL}/watch/${episodeSlug}/`;
   console.log(`[Stream] Fetching watch page: ${watchUrl}`);
 
   try {
-    const watchHtml = await fetchHTML(watchUrl);
-    const $ = cheerio.load(watchHtml);
+    const html = await fetchHTML(watchUrl);
+    const $ = cheerio.load(html);
 
-    // Find iframe
-    let embedUrl = $('.episode-player-box iframe').first().attr('src');
-    if (!embedUrl) {
-      embedUrl = $('iframe[src*="embed"], iframe[src*="player"], iframe[src*="video"]').first().attr('src');
+    // Find the active embed source
+    let embedUrl: string | null = null;
+
+    // Look for the active server in .player-selection.player-dub
+    const activeServer = $('.player-selection.player-dub span.active[data-embed-id]').first();
+    if (activeServer.length) {
+      const embedId = activeServer.attr('data-embed-id') || '';
+      // Format: "Name:base64url"
+      const parts = embedId.split(':');
+      if (parts.length === 2) {
+        const encoded = parts[1];
+        embedUrl = decodeBase64(encoded);
+      }
     }
+
+    // If no active server, fallback to the iframe src
     if (!embedUrl) {
-      console.warn(`[Stream] No iframe found for ${episodeId}`);
+      embedUrl = $('.episode-player-box iframe').first().attr('src');
+      if (embedUrl) {
+        if (embedUrl.startsWith('//')) embedUrl = `https:${embedUrl}`;
+        if (embedUrl.startsWith('/')) embedUrl = `${BASE_URL}${embedUrl}`;
+      }
+    }
+
+    if (!embedUrl) {
+      console.warn(`[Stream] No embed URL found for ${episodeSlug}`);
       return null;
     }
 
-    // Normalize URL
-    if (embedUrl.startsWith('//')) embedUrl = `https:${embedUrl}`;
-    if (embedUrl.startsWith('/')) embedUrl = `${BASE_URL}${embedUrl}`;
-
     console.log(`[Stream] Found embed URL: ${embedUrl}`);
 
-    // Try to extract direct video
+    // Try to extract direct video from the embed page
     const directVideo = await extractDirectVideo(embedUrl);
     if (directVideo) {
       console.log(`[Stream] Extracted direct video: ${directVideo}`);
       return directVideo;
     }
 
-    // Fallback: return embed URL itself
-    console.log(`[Stream] No direct video found, returning embed URL`);
+    // If no direct video, return the embed URL
+    console.log(`[Stream] Returning embed URL as fallback`);
     return embedUrl;
   } catch (error) {
     console.error(`[Stream] Error:`, error);
@@ -307,7 +347,7 @@ export async function getEpisodeStream(episodeId: string): Promise<string | null
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-//  HELPER: extractDirectVideo – Advanced with multiple patterns & fallbacks
+//  HELPER: extractDirectVideo – Parses embed page for direct video URL
 // ──────────────────────────────────────────────────────────────────────────────
 async function extractDirectVideo(embedUrl: string): Promise<string | null> {
   try {
@@ -345,7 +385,7 @@ async function extractDirectVideo(embedUrl: string): Promise<string | null> {
       return videoSrc;
     }
 
-    // ─── 3. Search in <script> tags ─────────────────────────────
+    // ─── 3. Script content ──────────────────────────────────────
     const scriptContent = $('script').map((_, el) => $(el).html() || '').get().join('\n');
 
     let match = scriptContent.match(/https?:\/\/[^\s"']+\.m3u8[^\s"']*/);
@@ -399,14 +439,10 @@ async function extractDirectVideo(embedUrl: string): Promise<string | null> {
       } catch (_) {}
     }
 
-    // ─── 7. Generic video URL patterns in HTML (fallback) ──────
-    const genericMatch = html.match(/https?:\/\/[^\s"']+\.(?:mp4|m3u8|webm)[^\s"']*/i);
-    if (genericMatch) return genericMatch[0];
-
     console.warn(`[Stream] No direct video found in embed page`);
     return null;
   } catch (error) {
-    console.error(`[Stream] Failed to extract direct video from embed:`, error);
+    console.error(`[Stream] Failed to extract direct video:`, error);
     return null;
   }
 }
