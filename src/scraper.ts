@@ -537,8 +537,8 @@ async function extractDirectVideo(embedUrl: string): Promise<string | null> {
       for (const url of possibleUrls) {
         // Verify if it's a valid video URL (head request)
         try {
-          const head = await axios.head(url, { timeout: 5000 });
-         if (head.status === 200 && String(head.headers['content-type']).startsWith('video/')) {
+          const contentType = head.headers['content-type'];
+if (head.status === 200 && typeof contentType === 'string' && contentType.startsWith('video/')) {
             return url;
           }
         } catch (_) {}
