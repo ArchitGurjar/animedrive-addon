@@ -1,21 +1,21 @@
-// src/types.ts
 export interface AnimeItem {
   id: string;
   name: string;
   poster?: string;
-  type: "movie" | "series";
-  year?: string;
+  type: string;
 }
-
 export interface Episode {
   season: number;
   episode: number;
-  title?: string;
-  id: string;          // unique identifier for the stream endpoint
+  title: string;
+  id: string;
 }
-
-export interface MetaDetails extends AnimeItem {
+export interface MetaDetails {
+  id: string;
+  name: string;
+  poster?: string;
+  type: string;
   description?: string;
   genre?: string[];
-  episodes: Episode[];
+  episodes?: Episode[];
 }
