@@ -4,14 +4,14 @@
 // ──────────────────────────────────────────────────────────────────────────────
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import { AnimeItem, MetaDetails, Episode } from './types';
+import { AnimeItem, MetaDetails, Episode, Stream } from './types';
 
 // ──────────────────────────────────────────────────────────────────────────────
 //  CONFIGURATION
 // ──────────────────────────────────────────────────────────────────────────────
 const BASE_URL = 'https://www.desidubanime.me';
 const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY || '';
-const PAGE_SIZE = 20; // For catalog pagination
+const PAGE_SIZE = 20; // Items per page for catalog
 
 // ──────────────────────────────────────────────────────────────────────────────
 //  HELPER: fetchHTML – Smart fetch with retry & render decision
@@ -20,6 +20,7 @@ async function fetchHTML(url: string, retries = 3): Promise<string> {
   let lastError: Error | null = null;
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
+      // Determine if we need JavaScript rendering
       const needsRender = !(
         url.includes('/az-list/') ||
         url.includes('/search/') ||
@@ -62,7 +63,7 @@ async function fetchHTML(url: string, retries = 3): Promise<string> {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-//  HELPER: extractSlug
+//  HELPER: extractSlug – Get last part of URL
 // ──────────────────────────────────────────────────────────────────────────────
 function extractSlug(url: string): string {
   const parts = url.split('/').filter(Boolean);
@@ -70,7 +71,7 @@ function extractSlug(url: string): string {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-//  HELPER: decodeBase64 – for embed URLs
+//  HELPER: decodeBase64 – For embed URLs
 // ──────────────────────────────────────────────────────────────────────────────
 function decodeBase64(encoded: string): string {
   try {
@@ -81,7 +82,7 @@ function decodeBase64(encoded: string): string {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-//  CATALOG: getAllAnime – with pagination
+//  CATALOG: getAllAnime – With pagination support
 // ──────────────────────────────────────────────────────────────────────────────
 export async function getAllAnime(page: number = 1): Promise<AnimeItem[]> {
   const url = page === 1 ? `${BASE_URL}/az-list/` : `${BASE_URL}/az-list/page/${page}/`;
@@ -155,14 +156,7 @@ export async function getAllAnime(page: number = 1): Promise<AnimeItem[]> {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-//  CATALOG: getRecentAnime – alias for backward compatibility
-// ──────────────────────────────────────────────────────────────────────────────
-export async function getRecentAnime(page: number = 1): Promise<AnimeItem[]> {
-  return getAllAnime(page);
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-//  META: getAnimeDetails – with REST API episodes
+//  META: getAnimeDetails – Uses REST API + HTML fallback
 // ──────────────────────────────────────────────────────────────────────────────
 export async function getAnimeDetails(animeSlug: string): Promise<MetaDetails | null> {
   const detailUrl = `${BASE_URL}/anime/${animeSlug}/`;
@@ -172,12 +166,43 @@ export async function getAnimeDetails(animeSlug: string): Promise<MetaDetails | 
 
   // ── Extract Anime Post ID ──
   let animeId: number | null = null;
-  const idScript = html.match(/var\s+current_post_data_id\s*=\s*(\d+);/);
-  if (idScript) animeId = parseInt(idScript[1], 10);
+
+  // Method 1: Look for data-post-id on body
+  const bodyPostId = $('body').attr('data-post-id');
+  if (bodyPostId) animeId = parseInt(bodyPostId, 10);
+
+  // Method 2: Look in JSON-LD
   if (!animeId) {
-    console.warn(`[Meta] Could not find anime ID for ${animeSlug}`);
-    // Fallback: try to get from a meta tag? We'll skip.
+    const jsonLd = $('script[type="application/ld+json"]').html();
+    if (jsonLd) {
+      try {
+        const parsed = JSON.parse(jsonLd);
+        // Try to find the post ID from the URL
+        const url = parsed?.url || parsed?.mainEntityOfPage?.['@id'];
+        if (url) {
+          const match = url.match(/\/anime\/(\d+)/);
+          if (match) animeId = parseInt(match[1], 10);
+        }
+      } catch {}
+    }
   }
+
+  // Method 3: Look for REST API link
+  if (!animeId) {
+    const restLink = $('link[rel="alternate"][type="application/json"]').attr('href');
+    if (restLink) {
+      const match = restLink.match(/\/anime\/(\d+)/);
+      if (match) animeId = parseInt(match[1], 10);
+    }
+  }
+
+  // Method 4: Look for a hidden input or meta tag with post ID
+  if (!animeId) {
+    const metaId = $('meta[name="post-id"]').attr('content');
+    if (metaId) animeId = parseInt(metaId, 10);
+  }
+
+  console.log(`[Meta] Anime ID: ${animeId}`);
 
   // ── TITLE ──
   let title = $('.anime-data h4 a span:first-child, .anime-data h4 a').first().text().trim();
@@ -195,7 +220,6 @@ export async function getAnimeDetails(animeSlug: string): Promise<MetaDetails | 
   // ── DESCRIPTION ──
   let description = $('.anime-synopsis .prose p, .anime-description, .entry-content p').first().text().trim();
   if (!description) {
-    // Fallback: from the overview section
     description = $('section[aria-label="Anime Overview"] p').first().text().trim();
   }
   description = description || 'No description available.';
@@ -229,40 +253,40 @@ export async function getAnimeDetails(animeSlug: string): Promise<MetaDetails | 
       if (Array.isArray(data) && data.length > 0) {
         episodes = data.map((ep: any) => {
           const slug = ep.slug || '';
-          // Extract episode number from slug: look for "episode-(\d+)" or number at end
           let epNum = 0;
           const numMatch = slug.match(/episode-(\d+)/) || slug.match(/-(\d+)$/);
           if (numMatch) epNum = parseInt(numMatch[1], 10);
           const titleText = ep.title?.rendered || ep.title || `Episode ${epNum}`;
           return {
-            season: 1, // The site doesn't show seasons; we assume season 1
+            season: 1,
             episode: epNum,
             title: titleText,
             id: slug,
           };
         });
-        // Sort by episode number
         episodes.sort((a, b) => a.episode - b.episode);
         console.log(`[Meta] Found ${episodes.length} episodes via REST API`);
       }
     } catch (error) {
-      console.warn(`[Meta] REST API failed, falling back to HTML scraping:`, error.message);
+      console.warn(`[Meta] REST API failed:`, error.message);
     }
   }
 
-  // Fallback: try to scrape episodes from the detail page (if any static list)
+  // Fallback: HTML scraping from the detail page
   if (episodes.length === 0) {
-    // Look for any links to /watch/ in the page
+    console.log(`[Meta] Falling back to HTML scraping for episodes`);
+    // Look for episode list in the page (may be in a dropdown or grid)
+    // The detail page might have a hidden list of episodes in the "seasonContent" div
     $('a[href*="/watch/"]').each((_, el) => {
       const href = $(el).attr('href');
       if (!href) return;
-      // Avoid duplicate and only take if it's an episode link (contains episode in slug)
-      if (!href.includes('-episode-')) return;
+      // Skip "Watch Now" buttons (they have button class or contain text)
+      if ($(el).hasClass('stretched-link') || $(el).text().includes('Watch Now')) return;
+      const slug = extractSlug(href);
       const text = $(el).text().trim();
-      const match = text.match(/\d+/) || href.match(/episode-(\d+)/);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        const slug = extractSlug(href);
+      const numMatch = text.match(/\d+/) || slug.match(/episode-(\d+)/);
+      if (numMatch) {
+        const num = parseInt(numMatch[1], 10);
         if (!episodes.some(e => e.id === slug)) {
           episodes.push({
             season: 1,
@@ -289,9 +313,9 @@ export async function getAnimeDetails(animeSlug: string): Promise<MetaDetails | 
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-//  STREAM: getEpisodeStream – Gets video URL for an episode
+//  STREAM: getEpisodeStream – Gets video URL from watch page
 // ──────────────────────────────────────────────────────────────────────────────
-export async function getEpisodeStream(episodeSlug: string): Promise<string | null> {
+export async function getEpisodeStream(episodeSlug: string): Promise<Stream | null> {
   const watchUrl = `${BASE_URL}/watch/${episodeSlug}/`;
   console.log(`[Stream] Fetching watch page: ${watchUrl}`);
 
@@ -299,24 +323,31 @@ export async function getEpisodeStream(episodeSlug: string): Promise<string | nu
     const html = await fetchHTML(watchUrl);
     const $ = cheerio.load(html);
 
-    // Find the active embed source
+    // ── Find the active embed source ──
     let embedUrl: string | null = null;
 
-    // Look for the active server in .player-selection.player-dub
+    // 1. Look for active server in .player-selection.player-dub
     const activeServer = $('.player-selection.player-dub span.active[data-embed-id]').first();
     if (activeServer.length) {
       const embedId = activeServer.attr('data-embed-id') || '';
-      // Format: "Name:base64url"
       const parts = embedId.split(':');
       if (parts.length === 2) {
-        const encoded = parts[1];
-        embedUrl = decodeBase64(encoded);
+        embedUrl = decodeBase64(parts[1]);
       }
     }
 
-    // If no active server, fallback to the iframe src
+    // 2. If no active server, fallback to iframe src
     if (!embedUrl) {
       embedUrl = $('.episode-player-box iframe').first().attr('src');
+      if (embedUrl) {
+        if (embedUrl.startsWith('//')) embedUrl = `https:${embedUrl}`;
+        if (embedUrl.startsWith('/')) embedUrl = `${BASE_URL}${embedUrl}`;
+      }
+    }
+
+    // 3. If still no embed, try to find any iframe with embed/player
+    if (!embedUrl) {
+      embedUrl = $('iframe[src*="embed"], iframe[src*="player"], iframe[src*="video"]').first().attr('src');
       if (embedUrl) {
         if (embedUrl.startsWith('//')) embedUrl = `https:${embedUrl}`;
         if (embedUrl.startsWith('/')) embedUrl = `${BASE_URL}${embedUrl}`;
@@ -330,16 +361,30 @@ export async function getEpisodeStream(episodeSlug: string): Promise<string | nu
 
     console.log(`[Stream] Found embed URL: ${embedUrl}`);
 
-    // Try to extract direct video from the embed page
+    // ── Try to extract direct video from the embed page ──
     const directVideo = await extractDirectVideo(embedUrl);
     if (directVideo) {
       console.log(`[Stream] Extracted direct video: ${directVideo}`);
-      return directVideo;
+      return {
+        url: directVideo,
+        title: 'DesiDubAnime Stream',
+        name: 'Direct Video',
+      };
     }
 
-    // If no direct video, return the embed URL
+    // ── No direct video – return embed URL ──
     console.log(`[Stream] Returning embed URL as fallback`);
-    return embedUrl;
+    return {
+      url: embedUrl,
+      title: 'DesiDubAnime Stream',
+      name: 'Embed Player',
+      behaviorHints: {
+        // Add headers to help with playback
+        headers: {
+          'Referer': BASE_URL,
+        },
+      },
+    };
   } catch (error) {
     console.error(`[Stream] Error:`, error);
     return null;
@@ -347,7 +392,7 @@ export async function getEpisodeStream(episodeSlug: string): Promise<string | nu
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-//  HELPER: extractDirectVideo – Parses embed page for direct video URL
+//  HELPER: extractDirectVideo – Advanced extraction from embed page
 // ──────────────────────────────────────────────────────────────────────────────
 async function extractDirectVideo(embedUrl: string): Promise<string | null> {
   try {
@@ -388,15 +433,19 @@ async function extractDirectVideo(embedUrl: string): Promise<string | null> {
     // ─── 3. Script content ──────────────────────────────────────
     const scriptContent = $('script').map((_, el) => $(el).html() || '').get().join('\n');
 
+    // 3a. HLS (.m3u8)
     let match = scriptContent.match(/https?:\/\/[^\s"']+\.m3u8[^\s"']*/);
     if (match) return match[0];
 
+    // 3b. MP4
     match = scriptContent.match(/https?:\/\/[^\s"']+\.mp4[^\s"']*/);
     if (match) return match[0];
 
+    // 3c. WebM
     match = scriptContent.match(/https?:\/\/[^\s"']+\.webm[^\s"']*/);
     if (match) return match[0];
 
+    // 3d. Any video pattern
     match = scriptContent.match(/https?:\/\/[^\s"']+\.(?:mp4|m3u8|webm)[^\s"']*/i);
     if (match) return match[0];
 
@@ -437,6 +486,28 @@ async function extractDirectVideo(embedUrl: string): Promise<string | null> {
         const videoUrlMatch = decoded.match(/https?:\/\/[^\s"']+\.(?:mp4|m3u8|webm)[^\s"']*/i);
         if (videoUrlMatch) return videoUrlMatch[0];
       } catch (_) {}
+    }
+
+    // ─── 7. gdmirrorbot / other embed servers ──────────────────
+    // Look for server URLs in JavaScript objects
+    const serverMatch = scriptContent.match(/var\s+servers\s*=\s*(\[.*?\])/s);
+    if (serverMatch) {
+      try {
+        const servers = JSON.parse(serverMatch[1]);
+        for (const server of servers) {
+          if (server.url && (server.url.includes('.mp4') || server.url.includes('.m3u8'))) {
+            return server.url;
+          }
+        }
+      } catch {}
+    }
+
+    // ─── 8. Iframe inside embed page ────────────────────────────
+    const iframeSrc = $('iframe[src*="player"], iframe[src*="embed"]').first().attr('src');
+    if (iframeSrc && iframeSrc !== embedUrl) {
+      if (iframeSrc.startsWith('//')) return `https:${iframeSrc}`;
+      if (iframeSrc.startsWith('/')) return `https://${new URL(embedUrl).hostname}${iframeSrc}`;
+      return iframeSrc;
     }
 
     console.warn(`[Stream] No direct video found in embed page`);
